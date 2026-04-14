@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <!--
-  食品效期助手 V7.0
+  食品效期助手 V7.1
   ================================================================
   【CDN 本地化说明】
   本工具默认先加载同目录下的本地库文件，找不到时自动回退 CDN。
@@ -13,7 +13,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>食品效期助手 V7.0</title>
+    <title>食品效期助手 V7.1</title>
     <!-- 直接从 CDN 加载（同步阻塞），确保 XLSX/echarts 在页面使用前完成加载 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
@@ -247,11 +247,17 @@
     </div>
 
     <div class="menu-item" style="border-top:1px solid #eee;padding-top:18px;">
-        <label class="section-title">📁 数据操作</label>
-        <button class="btn btn-blue" style="margin-bottom:8px" onclick="triggerImport()">📂 导入 Excel（台账交接）</button>
-        <button class="btn btn-outline" style="margin-bottom:8px" onclick="exportToExcel()">📥 导出 Excel（产品台账）</button>
-        <button class="btn btn-outline" style="margin-bottom:8px" onclick="exportJsonBackup()">💾 导出完整备份 (JSON)</button>
-        <button class="btn btn-outline" style="margin-bottom:8px" onclick="triggerJsonImport()">📤 从 JSON 备份恢复</button>
+        <label class="section-title">📦 元数据包（工具交接）</label>
+        <label style="font-size:12px;color:#aaa;margin-bottom:8px;line-height:1.5;">JSON 格式，包含全部字段，用于门店间数据交接或恢复</label>
+        <button class="btn btn-blue" style="margin-bottom:8px" onclick="exportJsonMetadata()">📤 导出元数据包</button>
+        <button class="btn btn-outline" style="margin-bottom:8px" onclick="triggerJsonImport()">📥 导入元数据包</button>
+    </div>
+
+    <div class="menu-item" style="border-top:1px solid #eee;padding-top:18px;">
+        <label class="section-title">📊 产品台账（Excel 查看）</label>
+        <label style="font-size:12px;color:#aaa;margin-bottom:8px;line-height:1.5;">Excel 格式，含全部产品信息，可用手机/电脑 Excel 打开查看，也可导回工具使用</label>
+        <button class="btn btn-outline" style="margin-bottom:8px" onclick="exportToExcel()">📥 导出门店产品信息</button>
+        <button class="btn btn-outline" style="margin-bottom:8px" onclick="triggerImport()">📂 导入门店产品信息</button>
         <button class="btn btn-danger" onclick="clearAllData()">⚠️ 清空本店记录</button>
     </div>
 
@@ -461,6 +467,11 @@ function fmtDatetime(ts) {
     if (!ts) return '';
     const d = new Date(ts);
     return `${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+}
+// 文件名专用时间戳：年月日时分秒，无分隔符
+function fileTs() {
+    const d = new Date();
+    return `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}${String(d.getHours()).padStart(2,'0')}${String(d.getMinutes()).padStart(2,'0')}${String(d.getSeconds()).padStart(2,'0')}`;
 }
 function getExpiry(dateStr, life, unit) {
     if (!dateStr) return '';
@@ -1195,8 +1206,12 @@ function handleImport(e) {
     const reader = new FileReader();
     reader.onload = function(evt) {
         try {
-            const wb  = XLSX.read(new Uint8Array(evt.target.result), { type:'array' });
+            const wb   = XLSX.read(new Uint8Array(evt.target.result), { type:'array' });
             const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header:1 });
+            if (rows.length < 2) return showToast('⚠️ 文件内容为空');
+
+            // 自动识别是否含"字段说明 Sheet"（本工具导出的台账标准格式）
+            // 列顺序：[0]名称 [1]分类 [2]位置 [3]生产日期 [4]时长 [5]单位 [6]过期日期(可选) [7]数量(可选)
             pendingImportRows = [];
             const baseTime = Date.now();
             rows.forEach((cols, idx) => {
@@ -1204,18 +1219,21 @@ function handleImport(e) {
                 const name    = String(cols[0]).trim();
                 const cat     = String(cols[1] != null ? cols[1] : '其他').trim();
                 const loc     = String(cols[2] != null ? cols[2] : '常温').trim();
-                const date    = parseExcelDate(cols[3]);
+                const date    = parseExcelDate(cols[3]);          // 生产日期（必须在 D 列）
                 const lifeRaw = cols[4] != null ? String(cols[4]).trim() : '';
                 const life    = parseInt(lifeRaw);
                 const unitStr = String(cols[5] != null ? cols[5] : '天').trim();
                 let unit = 'days';
                 if (unitStr.includes('月')) unit = 'months';
                 else if (unitStr.includes('年')) unit = 'years';
-                const valid  = !!(name && date && !isNaN(life) && life > 0);
-                const isDup  = products.some(p => p.name === name && p.date === date);
+                // cols[6] 是过期日期（导入时忽略，重新计算以保证一致性）
+                const qty = cols[7] != null ? (parseInt(String(cols[7]).trim()) || 1) : 1;
+
+                const valid = !!(name && date && !isNaN(life) && life > 0);
+                const isDup = products.some(p => p.name === name && p.date === date);
                 pendingImportRows.push({
                     id: baseTime * 1000 + idx,
-                    name, category: cat, location: loc, date, life, unit,
+                    name, category: cat, location: loc, date, life, unit, qty,
                     expiry: valid ? getExpiry(date, life, unit) : '',
                     valid, isDup
                 });
@@ -1282,7 +1300,7 @@ function confirmImport() {
             '⚠️ 覆盖导入确认',
             `即将清空本店 ${products.length} 条现有记录，替换为文件中的 ${validRows.length} 条。此操作不可撤销！`,
             () => {
-                products = validRows.map(r => ({ id: r.id, name: r.name, category: r.category, location: r.location, date: r.date, life: r.life, unit: r.unit, expiry: r.expiry, qty: 1 }));
+                products = validRows.map(r => ({ id: r.id, name: r.name, category: r.category, location: r.location, date: r.date, life: r.life, unit: r.unit, expiry: r.expiry, qty: r.qty||1 }));
                 syncData();
                 closeImportModal();
                 showToast(`✅ 覆盖导入完成，共 ${products.length} 条`, 3000);
@@ -1295,7 +1313,7 @@ function confirmImport() {
         let count = 0;
         validRows.forEach(r => {
             if (!r.isDup) {
-                products.push({ id: r.id, name: r.name, category: r.category, location: r.location, date: r.date, life: r.life, unit: r.unit, expiry: r.expiry, qty: 1 });
+                products.push({ id: r.id, name: r.name, category: r.category, location: r.location, date: r.date, life: r.life, unit: r.unit, expiry: r.expiry, qty: r.qty||1 });
                 count++;
             }
         });
@@ -1311,9 +1329,6 @@ function confirmImport() {
 
 // ================================================================
 // XLSX 可用性检查
-// Bug 根因：onerror 触发 CDN 回退是异步的，页面不会等待加载完成，
-// 点击导出时 XLSX 对象可能还未就绪，XLSX.utils 抛 TypeError 且无 catch，
-// 导致静默失败没有任何提示。现改为直接 CDN 同步加载 + 此处做状态检查。
 // ================================================================
 function checkXLSX() {
     if (typeof XLSX !== 'undefined') return true;
@@ -1322,66 +1337,88 @@ function checkXLSX() {
 }
 
 // ================================================================
-// Excel 导出（台账格式：无生产日期，附元数据 Sheet）
+// 通用 JSON 文件下载辅助（修复移动端 revokeObjectURL 时机问题）
+// ================================================================
+function downloadJson(obj, filename) {
+    const blob = new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 3000);
+}
+
+// ================================================================
+// 元数据包导出（JSON，含全部字段，用于工具间交接/恢复）
+// ================================================================
+function exportJsonMetadata() {
+    try {
+        const storeName = getActiveStore().name;
+        downloadJson({
+            _type:      'food-tool-metadata',
+            version:    'V7.1',
+            exportTime: Date.now(),
+            storeName,
+            storeId:    activeStoreId,
+            products,
+            config,
+            customCategories
+        }, `元数据包_${storeName}_${fileTs()}.json`);
+        showToast('✅ 元数据包已导出');
+    } catch(e) {
+        showToast('❌ 导出失败：' + e.message, 4000);
+        console.error('exportJsonMetadata:', e);
+    }
+}
+
+// ================================================================
+// 产品台账导出（Excel，含全部字段，可用 Excel 应用打开，也可导回工具）
+// 列顺序：产品名称 | 分类 | 存放位置 | 生产日期 | 保质期时长 | 保质期单位 | 过期日期 | 库存数量
 // ================================================================
 function exportToExcel() {
     if (!checkXLSX()) return;
     if (!products.length) return showToast('⚠️ 库中没有记录可以导出');
     try {
         const storeName = getActiveStore().name;
-        const now = new Date();
+        const now    = new Date();
         const nowStr = `${getLocalDateStr(now)} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
 
-        const dataSheet = [['产品名称','分类','存放位置','保质期时长','保质期单位','过期日期']];
+        // 产品台账 Sheet — 8 列，含生产日期，与导入格式完全对应
+        const dataSheet = [['产品名称','分类','存放位置','生产日期','保质期时长','保质期单位','过期日期','库存数量']];
         products.forEach(p => {
             const u = p.unit === 'days' ? '天' : p.unit === 'months' ? '个月' : '年';
-            dataSheet.push([p.name, p.category||'其他', p.location||'常温', p.life, u, p.expiry]);
+            dataSheet.push([p.name, p.category||'其他', p.location||'常温', p.date||'', p.life, u, p.expiry, p.qty||1]);
         });
 
-        const metaSheet = [
+        // 说明 Sheet — 方便不熟悉工具的人了解格式
+        const noteSheet = [
+            ['字段说明',''],
+            ['产品名称',  '必填'],
+            ['分类',      '如：饮品、零食，可自定义'],
+            ['存放位置',  '常温 / 冷藏 / 冷冻'],
+            ['生产日期',  '格式：YYYY-MM-DD，导入时必填'],
+            ['保质期时长','数字，如：180'],
+            ['保质期单位','天 / 个月 / 年'],
+            ['过期日期',  '自动计算，导入时可留空'],
+            ['库存数量',  '默认 1'],
+            ['',''],
+            ['导出信息',''],
             ['门店名称', storeName],
             ['导出时间', nowStr],
             ['记录条数', products.length],
-            ['工具版本', 'V7.0'],
+            ['工具版本', 'V7.1'],
         ];
 
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(dataSheet), '产品台账');
-        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(metaSheet), '导出信息');
-        XLSX.writeFile(wb, `台账_${storeName}_${getLocalDateStr()}.xlsx`);
-        showToast('✅ 台账导出成功');
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(noteSheet),  '字段说明');
+        XLSX.writeFile(wb, `门店产品信息_${storeName}_${fileTs()}.xlsx`);
+        showToast('✅ 产品台账已导出');
     } catch(e) {
         showToast('❌ 导出失败：' + e.message, 4000);
         console.error('exportToExcel:', e);
-    }
-}
-
-// ================================================================
-// JSON 完整备份导出 / 恢复
-// Bug 修复：原代码 a.click() 后立即 revokeObjectURL，移动端下载还未触发
-// 就销毁了链接，导致 JSON 备份在手机上无法下载。改为延迟 3 秒后释放。
-// ================================================================
-function exportJsonBackup() {
-    try {
-        const storeName = getActiveStore().name;
-        const data = JSON.stringify({
-            version: 'V7.0', exportTime: Date.now(),
-            storeName, storeId: activeStoreId,
-            products, config, customCategories
-        }, null, 2);
-        const blob = new Blob([data], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `完整备份_${storeName}_${getLocalDateStr()}.json`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        setTimeout(() => URL.revokeObjectURL(url), 3000);
-        showToast('✅ 完整备份已导出');
-    } catch(e) {
-        showToast('❌ 备份导出失败：' + e.message, 4000);
-        console.error('exportJsonBackup:', e);
     }
 }
 
@@ -1394,21 +1431,38 @@ function handleJsonImport(e) {
     reader.onload = function(evt) {
         try {
             const data = JSON.parse(evt.target.result);
-            if (!Array.isArray(data.products)) throw new Error('格式错误');
+            // 兼容：元数据包（_type 字段）和旧版备份（无 _type）
+            if (!Array.isArray(data.products)) throw new Error('格式错误：缺少 products 字段');
+            const typeName  = data._type === 'food-tool-metadata' ? '元数据包' : '备份文件';
+            const fromStore = data.storeName || '未知门店';
+            const pCount    = data.products.length;
+            const timeStr   = fmtDatetime(data.exportTime);
             showConfirmModal(
-                '从 JSON 恢复数据',
-                `备份来源：${data.storeName || '未知门店'}，共 ${data.products.length} 条记录，导出于 ${fmtDatetime(data.exportTime)}。\n\n恢复后将覆盖当前门店数据，是否继续？`,
+                `导入${typeName}`,
+                `来源：${fromStore}，共 ${pCount} 条记录，导出于 ${timeStr}。
+
+导入后将覆盖当前门店数据，建议先导出当前备份。是否继续？`,
                 () => {
                     products = data.products;
-                    if (data.config) { config = { ...config, ...data.config }; safeLSSet(sk('foodConfig'), JSON.stringify(config)); }
+                    if (data.config) {
+                        config = { ...config, ...data.config };
+                        safeLSSet(sk('foodConfig'), JSON.stringify(config));
+                        document.getElementById('warnDays').value    = config.warnDays;
+                        document.getElementById('defProdDate').value = config.defProdDate;
+                        document.getElementById('defLife').value     = config.defLife;
+                        document.getElementById('defUnit').value     = config.defUnit;
+                    }
                     if (data.customCategories) { customCategories = data.customCategories; saveCategories(); }
                     syncData();
                     renderCategorySelect(); renderCategoryManager();
-                    showToast(`✅ 已恢复 ${products.length} 条记录`, 3000);
+                    showToast(`✅ 已导入 ${products.length} 条记录`, 3000);
                     switchTab('list');
                 }
             );
-        } catch(err) { showToast('❌ JSON 文件格式不正确'); }
+        } catch(err) {
+            showToast('❌ 文件格式不正确：' + err.message);
+            console.error('handleJsonImport:', err);
+        }
     };
     reader.readAsText(file);
     e.target.value = '';
