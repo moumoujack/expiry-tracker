@@ -14,9 +14,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>食品效期助手 V7.0</title>
-    <!-- 优先本地，失败自动回退 CDN -->
-    <script src="./xlsx.full.min.js"  onerror="this.onerror=null;this.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'"></script>
-    <script src="./echarts.min.js"    onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js'"></script>
+    <!-- 直接从 CDN 加载（同步阻塞），确保 XLSX/echarts 在页面使用前完成加载 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
     <style>
         :root {
             --primary:   #4CAF50; --primary-dk: #388E3C;
@@ -1189,6 +1189,7 @@ function parseExcelDate(v) {
 function triggerImport() { document.getElementById('fileInput').click(); }
 
 function handleImport(e) {
+    if (!checkXLSX()) return;
     const file = e.target.files[0];
     if (!file) return;
     const reader = new FileReader();
@@ -1309,54 +1310,79 @@ function confirmImport() {
 }
 
 // ================================================================
+// XLSX 可用性检查
+// Bug 根因：onerror 触发 CDN 回退是异步的，页面不会等待加载完成，
+// 点击导出时 XLSX 对象可能还未就绪，XLSX.utils 抛 TypeError 且无 catch，
+// 导致静默失败没有任何提示。现改为直接 CDN 同步加载 + 此处做状态检查。
+// ================================================================
+function checkXLSX() {
+    if (typeof XLSX !== 'undefined') return true;
+    showToast('⏳ 表格库加载中，请稍后重试…', 3000);
+    return false;
+}
+
+// ================================================================
 // Excel 导出（台账格式：无生产日期，附元数据 Sheet）
 // ================================================================
 function exportToExcel() {
+    if (!checkXLSX()) return;
     if (!products.length) return showToast('⚠️ 库中没有记录可以导出');
-    const storeName = getActiveStore().name;
-    const now = new Date();
-    const nowStr = `${getLocalDateStr(now)} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+    try {
+        const storeName = getActiveStore().name;
+        const now = new Date();
+        const nowStr = `${getLocalDateStr(now)} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
 
-    // 产品台账 Sheet（无生产日期）
-    const dataSheet = [['产品名称','分类','存放位置','保质期时长','保质期单位','过期日期']];
-    products.forEach(p => {
-        const u = p.unit === 'days' ? '天' : p.unit === 'months' ? '个月' : '年';
-        dataSheet.push([p.name, p.category||'其他', p.location||'常温', p.life, u, p.expiry]);
-    });
+        const dataSheet = [['产品名称','分类','存放位置','保质期时长','保质期单位','过期日期']];
+        products.forEach(p => {
+            const u = p.unit === 'days' ? '天' : p.unit === 'months' ? '个月' : '年';
+            dataSheet.push([p.name, p.category||'其他', p.location||'常温', p.life, u, p.expiry]);
+        });
 
-    // 元数据 Sheet
-    const metaSheet = [
-        ['门店名称', storeName],
-        ['导出时间', nowStr],
-        ['记录条数', products.length],
-        ['工具版本', 'V7.0'],
-    ];
+        const metaSheet = [
+            ['门店名称', storeName],
+            ['导出时间', nowStr],
+            ['记录条数', products.length],
+            ['工具版本', 'V7.0'],
+        ];
 
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(dataSheet), '产品台账');
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(metaSheet), '导出信息');
-    XLSX.writeFile(wb, `台账_${storeName}_${getLocalDateStr()}.xlsx`);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(dataSheet), '产品台账');
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(metaSheet), '导出信息');
+        XLSX.writeFile(wb, `台账_${storeName}_${getLocalDateStr()}.xlsx`);
+        showToast('✅ 台账导出成功');
+    } catch(e) {
+        showToast('❌ 导出失败：' + e.message, 4000);
+        console.error('exportToExcel:', e);
+    }
 }
 
 // ================================================================
 // JSON 完整备份导出 / 恢复
+// Bug 修复：原代码 a.click() 后立即 revokeObjectURL，移动端下载还未触发
+// 就销毁了链接，导致 JSON 备份在手机上无法下载。改为延迟 3 秒后释放。
 // ================================================================
 function exportJsonBackup() {
-    const storeName = getActiveStore().name;
-    const data = JSON.stringify({
-        version: 'V7.0',
-        exportTime: Date.now(),
-        storeName,
-        storeId: activeStoreId,
-        products, config, customCategories
-    }, null, 2);
-    const blob = new Blob([data], { type: 'application/json' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `完整备份_${storeName}_${getLocalDateStr()}.json`;
-    a.click();
-    URL.revokeObjectURL(a.href);
-    showToast('✅ 完整备份已导出');
+    try {
+        const storeName = getActiveStore().name;
+        const data = JSON.stringify({
+            version: 'V7.0', exportTime: Date.now(),
+            storeName, storeId: activeStoreId,
+            products, config, customCategories
+        }, null, 2);
+        const blob = new Blob([data], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `完整备份_${storeName}_${getLocalDateStr()}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 3000);
+        showToast('✅ 完整备份已导出');
+    } catch(e) {
+        showToast('❌ 备份导出失败：' + e.message, 4000);
+        console.error('exportJsonBackup:', e);
+    }
 }
 
 function triggerJsonImport() { document.getElementById('jsonImportInput').click(); }
