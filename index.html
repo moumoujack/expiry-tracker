@@ -322,6 +322,40 @@
     </div>
 </div>
 
+<!-- JSON 导入弹窗（合并 / 覆盖选择）-->
+<div class="modal-overlay-ui" id="jsonImportModal">
+    <div class="import-modal-card">
+        <div class="import-modal-header">
+            <h3 id="jiTitle">导入元数据包</h3>
+            <button class="import-close-btn" onclick="closeJsonImportModal()">✕</button>
+        </div>
+        <div class="import-modal-body">
+            <div class="import-summary" id="jiSummary"></div>
+            <div class="import-mode-group">
+                <label class="mode-title">选择导入方式：</label>
+                <label class="import-radio-item selected" id="jiLabel-merge" onclick="selectJsonImportMode('merge')">
+                    <input type="radio" name="jiMode" value="merge" checked>
+                    <div class="import-radio-label">
+                        <div class="import-radio-name">合并导入 <span style="background:#e8f5e9;color:#2e7d32;font-size:11px;padding:1px 6px;border-radius:4px;margin-left:4px;">推荐</span></div>
+                        <div class="import-radio-desc">本店没有的产品追加进来；已存在的产品（含已填日期）保持不变，不会被无日期版本覆盖</div>
+                    </div>
+                </label>
+                <label class="import-radio-item danger-mode" id="jiLabel-overwrite" onclick="selectJsonImportMode('overwrite')">
+                    <input type="radio" name="jiMode" value="overwrite">
+                    <div class="import-radio-label">
+                        <div class="import-radio-name">覆盖导入 <span style="background:#ffcdd2;color:#c62828;font-size:11px;padding:1px 6px;border-radius:4px;margin-left:4px;">危险</span></div>
+                        <div class="import-radio-desc">先清空本店所有数据，再写入文件内容。本店已填写的生产日期将全部丢失</div>
+                    </div>
+                </label>
+            </div>
+        </div>
+        <div class="import-modal-footer">
+            <button class="btn btn-outline" style="flex:1" onclick="closeJsonImportModal()">取消</button>
+            <button class="btn btn-primary" style="flex:2" id="jiConfirmBtn">确认导入</button>
+        </div>
+    </div>
+</div>
+
 <div class="modal-overlay-ui" id="storePickerModal">
     <div class="store-picker-card">
         <div class="store-picker-header">
@@ -848,13 +882,23 @@ function restoreBackup(slot) {
             products = b.products || [];
             config = b.config || config;
             customCategories = b.customCategories || [];
-            syncData(false);
             saveCategories(); safeLSSet(sk('foodConfig'), JSON.stringify(config));
             document.getElementById('warnDays').value    = config.warnDays;
             document.getElementById('defProdDate').value = config.defProdDate;
             document.getElementById('defLife').value     = config.defLife;
             document.getElementById('defUnit').value     = config.defUnit;
             renderCategorySelect(); renderCategoryManager();
+
+            // 【Bug修复】恢复备份后必须退出批量模式。
+            // 若恢复前处于批量选择状态（isBatchMode=true），syncData 会调用
+            // renderRecentList，导致录入页的最近录入卡片也渲染出选择框。
+            // 在 syncData 之前把批量模式重置干净，再渲染就不会有残留选择框。
+            isBatchMode = false;
+            document.getElementById('batchPanel').style.display = 'none';
+            document.getElementById('btnBatch').style.backgroundColor = 'white';
+            document.getElementById('selectAllCB').checked = false;
+
+            syncData(false);
             showToast(`✅ 已恢复备份 ${slot}（${products.length} 条记录）`);
         }
     );
@@ -1665,6 +1709,16 @@ function exportToExcel() {
 
 function triggerJsonImport() { document.getElementById('jsonImportInput').click(); }
 
+// ================================================================
+// JSON 导入（元数据包 / 备份文件）
+// ================================================================
+// 【合并 vs 覆盖 的判断逻辑】
+//   合并导入：以产品 id 为唯一键。
+//     - 文件中的产品若在本店已存在（id 相同），跳过，保留本店现有数据（含已填日期）。
+//     - 文件中本店没有的产品，追加进来（初始为"待填写"状态）。
+//   覆盖导入：先清空本店所有产品，再全量写入文件内容。
+//     ⚠️ 危险操作：本店所有已填写的生产日期都会丢失。
+// ================================================================
 function handleJsonImport(e) {
     const file = e.target.files[0];
     if (!file) return;
@@ -1674,6 +1728,7 @@ function handleJsonImport(e) {
             const data = JSON.parse(evt.target.result);
             if (!Array.isArray(data.products)) throw new Error('格式错误：缺少 products 字段');
 
+            // 1. 解析并校验文件中的产品列表
             const validProducts = data.products.filter(p =>
                 p && typeof p === 'object' && p.name && (p.id || p.id === 0)
             ).map(p => ({
@@ -1687,40 +1742,47 @@ function handleJsonImport(e) {
                 expiry:   p.expiry || (p.date && p.life ? getExpiry(p.date, p.life, p.unit || 'days') : ''),
                 qty:      Math.max(1, parseInt(p.qty) || 1)
             }));
-            const skipped = data.products.length - validProducts.length;
-            const pendingDateCount = validProducts.filter(p => !p.date).length;
+            const badCount = data.products.length - validProducts.length;
+
+            // 2. 计算合并模式下的新增数量（文件中 id 在本店不存在的）
+            const existingIds = new Set(products.map(p => p.id));
+            const toAdd    = validProducts.filter(p => !existingIds.has(p.id));   // 新增
+            const dupCount = validProducts.length - toAdd.length;                 // 已存在（跳过）
+            const pendingInNew = toAdd.filter(p => !p.date).length;              // 新增中无日期的
 
             const typeName  = data._type === 'food-tool-metadata' ? '元数据包' : '备份文件';
             const fromStore = data.storeName || '未知门店';
-            const pCount    = validProducts.length;
             const timeStr   = fmtDatetime(data.exportTime);
-            let confirmMsg  = `来源：${fromStore}，共 ${pCount} 条有效记录，导出于 ${timeStr}。`;
-            if (pendingDateCount > 0) confirmMsg += `\n⚠️ 其中 ${pendingDateCount} 条缺少生产日期，导入后需手动补填。`;
-            if (skipped > 0) confirmMsg += `\n（${skipped} 条格式异常记录已自动过滤）`;
-            confirmMsg += '\n\n导入后将覆盖当前门店数据，建议先导出当前备份。是否继续？';
 
-            showConfirmModal(
-                `导入${typeName}`,
-                confirmMsg,
-                () => {
-                    products = validProducts;
-                    if (data.config) {
-                        config = { ...config, ...data.config };
-                        safeLSSet(sk('foodConfig'), JSON.stringify(config));
-                        document.getElementById('warnDays').value    = config.warnDays;
-                        document.getElementById('defProdDate').value = config.defProdDate;
-                        document.getElementById('defLife').value     = config.defLife;
-                        document.getElementById('defUnit').value     = config.defUnit;
-                    }
-                    if (data.customCategories) { customCategories = data.customCategories; saveCategories(); }
+            // 3. 显示包含合并/覆盖选项的导入弹窗
+            showJsonImportModal({
+                typeName, fromStore, timeStr,
+                totalValid: validProducts.length,
+                toAdd, dupCount, pendingInNew, badCount,
+                onMerge: () => {
+                    // 合并：追加本店没有的产品，已有的原封不动
+                    products = [...products, ...toAdd];
+                    applyJsonImportConfig(data);
                     syncData();
                     renderCategorySelect(); renderCategoryManager();
-                    let msg = `✅ 已导入 ${products.length} 条记录`;
-                    if (skipped > 0) msg += `（跳过 ${skipped} 条异常）`;
-                    showToast(msg, 3000);
+                    let msg = `✅ 合并完成：新增 ${toAdd.length} 条`;
+                    if (dupCount > 0) msg += `，跳过重复 ${dupCount} 条`;
+                    if (badCount > 0) msg += `，过滤异常 ${badCount} 条`;
+                    showToast(msg, 3500);
+                    switchTab('list');
+                },
+                onOverwrite: () => {
+                    // 覆盖：清空本店数据，全量写入文件内容
+                    products = validProducts;
+                    applyJsonImportConfig(data);
+                    syncData();
+                    renderCategorySelect(); renderCategoryManager();
+                    let msg = `✅ 覆盖导入：共 ${products.length} 条`;
+                    if (badCount > 0) msg += `，过滤异常 ${badCount} 条`;
+                    showToast(msg, 3500);
                     switchTab('list');
                 }
-            );
+            });
         } catch(err) {
             showToast('❌ 文件格式不正确：' + err.message);
             console.error('handleJsonImport:', err);
@@ -1728,6 +1790,56 @@ function handleJsonImport(e) {
     };
     reader.readAsText(file);
     e.target.value = '';
+}
+
+// 导入后同步 config 和自定义分类
+function applyJsonImportConfig(data) {
+    if (data.config) {
+        config = { ...config, ...data.config };
+        safeLSSet(sk('foodConfig'), JSON.stringify(config));
+        document.getElementById('warnDays').value    = config.warnDays;
+        document.getElementById('defProdDate').value = config.defProdDate;
+        document.getElementById('defLife').value     = config.defLife;
+        document.getElementById('defUnit').value     = config.defUnit;
+    }
+    if (data.customCategories) { customCategories = data.customCategories; saveCategories(); }
+}
+
+// JSON 导入专用弹窗（含合并/覆盖选项）
+function showJsonImportModal({ typeName, fromStore, timeStr, totalValid,
+        toAdd, dupCount, pendingInNew, badCount, onMerge, onOverwrite }) {
+    const modal = document.getElementById('jsonImportModal');
+    if (!modal) return; // 降级：如果弹窗 DOM 不存在，直接合并
+    document.getElementById('jiTitle').textContent = `导入${typeName}`;
+
+    let summaryHtml = `<b>来源：</b>${escapeHtml(fromStore)}，导出于 ${escapeHtml(timeStr)}<br>`;
+    summaryHtml += `<b>文件有效条数：</b>${totalValid} 条`;
+    if (badCount > 0) summaryHtml += `，<span style="color:#999">过滤异常 ${badCount} 条</span>`;
+    summaryHtml += '<br>';
+    if (dupCount > 0)
+        summaryHtml += `<span style="color:#e65100">⚠️ 本店已有 ${dupCount} 条相同产品（合并时跳过）</span><br>`;
+    if (pendingInNew > 0)
+        summaryHtml += `<span style="color:#888">📝 新增的 ${toAdd.length} 条中，有 ${pendingInNew} 条缺少生产日期，导入后补填</span>`;
+    document.getElementById('jiSummary').innerHTML = summaryHtml;
+
+    // 重置选项
+    selectJsonImportMode('merge');
+
+    document.getElementById('jiConfirmBtn').onclick = () => {
+        const mode = document.querySelector('input[name="jiMode"]:checked').value;
+        closeJsonImportModal();
+        if (mode === 'merge') onMerge(); else onOverwrite();
+    };
+    modal.classList.add('active');
+}
+function selectJsonImportMode(mode) {
+    document.querySelector(`input[name="jiMode"][value="${mode}"]`).checked = true;
+    ['merge','overwrite'].forEach(m => {
+        document.getElementById(`jiLabel-${m}`).classList.toggle('selected', m === mode);
+    });
+}
+function closeJsonImportModal() {
+    document.getElementById('jsonImportModal').classList.remove('active');
 }
 
 function clearAllData() {
