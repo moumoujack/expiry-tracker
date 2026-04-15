@@ -1562,20 +1562,34 @@ function downloadJson(obj, filename) {
     setTimeout(() => URL.revokeObjectURL(url), 3000);
 }
 
+// ================================================================
+// 元数据包导出（JSON，仅含基础信息，剥离日期作为填报模板）
+// ================================================================
 function exportJsonMetadata() {
     try {
         const storeName = getActiveStore().name;
+        
+        // 【核心修复】：在导出元数据时，将 date 和 expiry 强制置空。
+        // 使用 map 创建一个新数组，这样不会修改当前门店界面上正在显示的真实数据。
+        // 这使得导出的 JSON 成为一个纯粹的“产品模板包”，店员导入后必须手动补填日期。
+        const templateProducts = products.map(p => ({
+            ...p,         // 复制 id, name, category, location, life, unit, qty
+            date: '',     // 剥离生产日期
+            expiry: ''    // 剥离过期日期
+        }));
+
         downloadJson({
             _type:      'food-tool-metadata',
             version:    APP_VERSION,
             exportTime: Date.now(),
             storeName,
             storeId:    activeStoreId,
-            products,
+            products:   templateProducts, // 传入剥离日期后的模板数据
             config,
             customCategories
         }, `元数据包_${storeName}_${fileTs()}.json`);
-        showToast('✅ 元数据包已导出');
+        
+        showToast('✅ 元数据包（纯模板）已导出');
     } catch(e) {
         showToast('❌ 导出失败：' + e.message, 4000);
         console.error('exportJsonMetadata:', e);
