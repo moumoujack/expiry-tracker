@@ -337,14 +337,14 @@
                     <input type="radio" name="jiMode" value="merge" checked>
                     <div class="import-radio-label">
                         <div class="import-radio-name">合并导入 <span style="background:#e8f5e9;color:#2e7d32;font-size:11px;padding:1px 6px;border-radius:4px;margin-left:4px;">推荐</span></div>
-                        <div class="import-radio-desc">本店没有的产品追加进来；已存在的产品（含已填日期）保持不变，不会被无日期版本覆盖</div>
+                        <div class="import-radio-desc">按名称去重：本店已有同名"待填写"条目的跳过，没有的追加为新待填写。已填日期的记录永远不动</div>
                     </div>
                 </label>
                 <label class="import-radio-item danger-mode" id="jiLabel-overwrite" onclick="selectJsonImportMode('overwrite')">
                     <input type="radio" name="jiMode" value="overwrite">
                     <div class="import-radio-label">
                         <div class="import-radio-name">覆盖导入 <span style="background:#ffcdd2;color:#c62828;font-size:11px;padding:1px 6px;border-radius:4px;margin-left:4px;">危险</span></div>
-                        <div class="import-radio-desc">先清空本店所有数据，再写入文件内容。本店已填写的生产日期将全部丢失</div>
+                        <div class="import-radio-desc">清除现有"待填写"条目，写入文件全部产品作为新待填写。已填日期的记录保留不动</div>
                     </div>
                 </label>
             </div>
@@ -1712,12 +1712,25 @@ function triggerJsonImport() { document.getElementById('jsonImportInput').click(
 // ================================================================
 // JSON 导入（元数据包 / 备份文件）
 // ================================================================
-// 【合并 vs 覆盖 的判断逻辑】
-//   合并导入：以产品 id 为唯一键。
-//     - 文件中的产品若在本店已存在（id 相同），跳过，保留本店现有数据（含已填日期）。
-//     - 文件中本店没有的产品，追加进来（初始为"待填写"状态）。
-//   覆盖导入：先清空本店所有产品，再全量写入文件内容。
-//     ⚠️ 危险操作：本店所有已填写的生产日期都会丢失。
+// ================================================================
+// 【合并 vs 覆盖 的判断逻辑 — 元数据包专用】
+//
+// 核心前提：元数据包是"商品模板"，产品 id 与本店原始数据相同（从本店导出的）。
+// 因此不能用 id 判断重复，否则所有条目都会被跳过。
+//
+// 正确的去重维度：产品【名称】——同名产品是否已有"待填写"条目。
+//
+//   合并导入：
+//     - 若本店已存在某名称的"待填写"（无日期）条目 → 跳过，不重复创建。
+//     - 若该名称在本店无"待填写"条目（不管有没有已填日期的记录）→ 追加新条目。
+//     - 已填日期的记录永远保留，不受影响。
+//     - 所有新追加的条目分配全新 id，不复用文件里的 id。
+//
+//   覆盖导入（待填写区域）：
+//     - 保留本店所有已填写生产日期的记录（真实数据，不能丢）。
+//     - 删除本店现有的所有"待填写"条目。
+//     - 将文件里的全部产品以新 id 追加为新的"待填写"条目。
+//     ⚠️ "覆盖"的范围仅限待填写区域，不会动已填日期的记录。
 // ================================================================
 function handleJsonImport(e) {
     const file = e.target.files[0];
@@ -1728,56 +1741,67 @@ function handleJsonImport(e) {
             const data = JSON.parse(evt.target.result);
             if (!Array.isArray(data.products)) throw new Error('格式错误：缺少 products 字段');
 
-            // 1. 解析并校验文件中的产品列表
+            // 1. 解析并校验文件中的产品列表，统一剥离日期（元数据包应已无日期，双保险）
             const validProducts = data.products.filter(p =>
                 p && typeof p === 'object' && p.name && (p.id || p.id === 0)
             ).map(p => ({
-                id:       p.id || genId(),
+                id:       genId(),             // ← 始终分配新 id，避免与本店现有 id 冲突
                 name:     String(p.name),
                 category: p.category || '其他',
                 location: p.location || '常温',
-                date:     p.date || '',
+                date:     p.date || '',        // 元数据包本身无日期，这里留空
                 life:     parseInt(p.life) || 0,
                 unit:     ['days','months','years'].includes(p.unit) ? p.unit : 'days',
-                expiry:   p.expiry || (p.date && p.life ? getExpiry(p.date, p.life, p.unit || 'days') : ''),
+                expiry:   p.expiry || '',      // 元数据包本身无到期日，这里留空
                 qty:      Math.max(1, parseInt(p.qty) || 1)
             }));
             const badCount = data.products.length - validProducts.length;
 
-            // 2. 计算合并模式下的新增数量（文件中 id 在本店不存在的）
-            const existingIds = new Set(products.map(p => p.id));
-            const toAdd    = validProducts.filter(p => !existingIds.has(p.id));   // 新增
-            const dupCount = validProducts.length - toAdd.length;                 // 已存在（跳过）
-            const pendingInNew = toAdd.filter(p => !p.date).length;              // 新增中无日期的
+            // 2. 计算合并数量
+            //    去重维度：名称。只要本店已有该名称的"待填写"条目，就跳过。
+            const pendingNames = new Set(
+                products.filter(p => !p.date).map(p => p.name)
+            );
+            const toAdd    = validProducts.filter(p => !pendingNames.has(p.name));
+            const skipCount = validProducts.length - toAdd.length; // 因已有待填写而跳过的数量
+
+            // 3. 计算覆盖数量（保留已填日期，替换待填写区域）
+            const datedProducts   = products.filter(p => p.date);  // 已填日期，覆盖时保留
+            const existingPending = products.filter(p => !p.date); // 现有待填写，覆盖时清除
 
             const typeName  = data._type === 'food-tool-metadata' ? '元数据包' : '备份文件';
             const fromStore = data.storeName || '未知门店';
             const timeStr   = fmtDatetime(data.exportTime);
 
-            // 3. 显示包含合并/覆盖选项的导入弹窗
+            // 4. 显示弹窗，将计算好的数量和回调传入
             showJsonImportModal({
                 typeName, fromStore, timeStr,
-                totalValid: validProducts.length,
-                toAdd, dupCount, pendingInNew, badCount,
+                totalValid:    validProducts.length,
+                toAddCount:    toAdd.length,
+                skipCount,
+                datedCount:    datedProducts.length,
+                overwritePendingCount: existingPending.length,
+                badCount,
                 onMerge: () => {
-                    // 合并：追加本店没有的产品，已有的原封不动
+                    // 追加：只加本店无"待填写"同名条目的产品
                     products = [...products, ...toAdd];
                     applyJsonImportConfig(data);
                     syncData();
                     renderCategorySelect(); renderCategoryManager();
-                    let msg = `✅ 合并完成：新增 ${toAdd.length} 条`;
-                    if (dupCount > 0) msg += `，跳过重复 ${dupCount} 条`;
-                    if (badCount > 0) msg += `，过滤异常 ${badCount} 条`;
+                    let msg = `✅ 合并完成：新增 ${toAdd.length} 条待填写`;
+                    if (skipCount > 0) msg += `，已有待填写跳过 ${skipCount} 条`;
+                    if (badCount  > 0) msg += `，过滤异常 ${badCount} 条`;
                     showToast(msg, 3500);
                     switchTab('list');
                 },
                 onOverwrite: () => {
-                    // 覆盖：清空本店数据，全量写入文件内容
-                    products = validProducts;
+                    // 保留已填日期的记录，清除旧的待填写，写入文件的全部产品作为新待填写
+                    products = [...datedProducts, ...validProducts];
                     applyJsonImportConfig(data);
                     syncData();
                     renderCategorySelect(); renderCategoryManager();
-                    let msg = `✅ 覆盖导入：共 ${products.length} 条`;
+                    let msg = `✅ 待填写区域已重置：${validProducts.length} 条`;
+                    if (datedProducts.length > 0) msg += `，保留已填 ${datedProducts.length} 条`;
                     if (badCount > 0) msg += `，过滤异常 ${badCount} 条`;
                     showToast(msg, 3500);
                     switchTab('list');
@@ -1807,22 +1831,33 @@ function applyJsonImportConfig(data) {
 
 // JSON 导入专用弹窗（含合并/覆盖选项）
 function showJsonImportModal({ typeName, fromStore, timeStr, totalValid,
-        toAdd, dupCount, pendingInNew, badCount, onMerge, onOverwrite }) {
+        toAddCount, skipCount, datedCount, overwritePendingCount, badCount,
+        onMerge, onOverwrite }) {
     const modal = document.getElementById('jsonImportModal');
-    if (!modal) return; // 降级：如果弹窗 DOM 不存在，直接合并
+    if (!modal) return;
     document.getElementById('jiTitle').textContent = `导入${typeName}`;
 
     let summaryHtml = `<b>来源：</b>${escapeHtml(fromStore)}，导出于 ${escapeHtml(timeStr)}<br>`;
     summaryHtml += `<b>文件有效条数：</b>${totalValid} 条`;
     if (badCount > 0) summaryHtml += `，<span style="color:#999">过滤异常 ${badCount} 条</span>`;
     summaryHtml += '<br>';
-    if (dupCount > 0)
-        summaryHtml += `<span style="color:#e65100">⚠️ 本店已有 ${dupCount} 条相同产品（合并时跳过）</span><br>`;
-    if (pendingInNew > 0)
-        summaryHtml += `<span style="color:#888">📝 新增的 ${toAdd.length} 条中，有 ${pendingInNew} 条缺少生产日期，导入后补填</span>`;
-    document.getElementById('jiSummary').innerHTML = summaryHtml;
 
-    // 重置选项
+    // 合并说明
+    summaryHtml += `<br><b style="color:#1565c0">合并时：</b>`;
+    summaryHtml += `新增 ${toAddCount} 条待填写`;
+    if (skipCount > 0)
+        summaryHtml += `，<span style="color:#888">跳过 ${skipCount} 条（已有同名待填写）</span>`;
+    summaryHtml += '<br>';
+
+    // 覆盖说明
+    summaryHtml += `<b style="color:#b71c1c">覆盖时：</b>`;
+    summaryHtml += `重置待填写为文件内容（${totalValid} 条）`;
+    if (overwritePendingCount > 0)
+        summaryHtml += `，<span style="color:#e65100">清除现有待填写 ${overwritePendingCount} 条</span>`;
+    if (datedCount > 0)
+        summaryHtml += `，<span style="color:#2e7d32">保留已填日期 ${datedCount} 条</span>`;
+
+    document.getElementById('jiSummary').innerHTML = summaryHtml;
     selectJsonImportMode('merge');
 
     document.getElementById('jiConfirmBtn').onclick = () => {
