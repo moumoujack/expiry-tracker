@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>食品效期助手 V7.5</title>
+    <title>食品效期助手 V7.3</title>
     <script defer src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
     <style>
@@ -244,8 +244,14 @@
     </div>
 
     <div class="menu-item" style="border-top:1px solid #eee;padding-top:18px;">
-        <label class="section-title">📦 元数据包（工具交接）</label>
-        <label style="font-size:12px;color:#aaa;margin-bottom:8px;line-height:1.5;">JSON 格式，包含全部字段，用于门店间数据交接或恢复</label>
+        <label class="section-title">📦 元数据包（填报模板）</label>
+        <!-- 
+            【设计说明】元数据包故意不含生产日期和到期日期。
+            它的作用是将"商品配置清单"（名称/保质期/分类等固定信息）分发给店员，
+            店员导入后根据当天实际收货日期自行填写生产日期，系统自动推算到期日。
+            如需导出含完整日期的数据，请使用下方"导出门店产品信息（Excel）"。
+        -->
+        <label style="font-size:12px;color:#aaa;margin-bottom:8px;line-height:1.5;">JSON 格式，仅含商品基础配置（<b style="color:#e65100;">不含</b>生产/到期日期），用于将商品列表分发给其他门店或新设备，店员导入后自行填写生产日期</label>
         <button class="btn btn-blue" style="margin-bottom:8px" onclick="exportJsonMetadata()">📤 导出元数据包</button>
         <button class="btn btn-outline" style="margin-bottom:8px" onclick="triggerJsonImport()">📥 导入元数据包</button>
     </div>
@@ -450,7 +456,7 @@
 // ================================================================
 // 全局版本号
 // ================================================================
-const APP_VERSION = 'V7.5';
+const APP_VERSION = 'V7.6';
 
 // ================================================================
 // 工具函数
@@ -1563,19 +1569,37 @@ function downloadJson(obj, filename) {
 }
 
 // ================================================================
-// 元数据包导出（JSON，仅含基础信息，剥离日期作为填报模板）
+// 元数据包导出（JSON，仅含商品基础配置，故意剥离日期，作为填报模板使用）
+// ================================================================
+//
+// 【两种导出文件的职责区分 — 不可混淆】
+//
+//   ① 元数据包（本函数）—— "商品配置模板"
+//      只含固定属性：名称 / 保质期时长 / 单位 / 分类 / 存放位置 / 库存数量
+//      故意剥除 date（生产日期）和 expiry（到期日期）。
+//      用途：将商品列表分发给其他门店或新设备，店员导入后按
+//            实际收货日期手动填写生产日期，系统自动推算到期日。
+//
+//   ② 门店产品信息 Excel（exportToExcel）—— "完整数据台账"
+//      含所有字段，包括具体的生产日期和到期日期。
+//      用途：本店存档、手工查阅或数据备份。
+//
+// 【实现说明】
+//   Array.map() 创建新数组，逐条浅拷贝产品对象后，
+//   用 date: '' / expiry: '' 覆盖日期字段。
+//   不影响内存中正在显示的真实台账数据，只有导出文件里的日期是空的。
+//   店员端导入后，系统会将这些条目标记为"待填写"状态并在首页提示补录。
+//
 // ================================================================
 function exportJsonMetadata() {
     try {
         const storeName = getActiveStore().name;
-        
-        // 【核心修复】：在导出元数据时，将 date 和 expiry 强制置空。
-        // 使用 map 创建一个新数组，这样不会修改当前门店界面上正在显示的真实数据。
-        // 这使得导出的 JSON 成为一个纯粹的“产品模板包”，店员导入后必须手动补填日期。
+
+        // 创建无日期的模板数组（不修改原始 products 数组）
         const templateProducts = products.map(p => ({
-            ...p,         // 复制 id, name, category, location, life, unit, qty
-            date: '',     // 剥离生产日期
-            expiry: ''    // 剥离过期日期
+            ...p,         // 复制固定属性：id / name / category / location / life / unit / qty
+            date:   '',   // ⬅ 剥离生产日期（店员收货时按实际日期自行填写）
+            expiry: ''    // ⬅ 剥离到期日期（填完生产日期后由系统自动推算）
         }));
 
         downloadJson({
@@ -1584,12 +1608,12 @@ function exportJsonMetadata() {
             exportTime: Date.now(),
             storeName,
             storeId:    activeStoreId,
-            products:   templateProducts, // 传入剥离日期后的模板数据
+            products:   templateProducts, // ← 无日期的模板数据，非完整台账
             config,
             customCategories
         }, `元数据包_${storeName}_${fileTs()}.json`);
-        
-        showToast('✅ 元数据包（纯模板）已导出');
+
+        showToast('✅ 元数据包（商品配置模板，不含日期）已导出');
     } catch(e) {
         showToast('❌ 导出失败：' + e.message, 4000);
         console.error('exportJsonMetadata:', e);
