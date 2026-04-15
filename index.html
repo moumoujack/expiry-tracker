@@ -324,27 +324,29 @@
 
 <!-- JSON 导入弹窗（合并 / 覆盖选择）-->
 <div class="modal-overlay-ui" id="jsonImportModal">
-    <div class="import-modal-card">
+    <!-- height:auto 覆盖 import-modal-card 的 flex 拉伸，防止弹窗撑满屏幕 -->
+    <div class="import-modal-card" style="height:auto;">
         <div class="import-modal-header">
             <h3 id="jiTitle">导入元数据包</h3>
             <button class="import-close-btn" onclick="closeJsonImportModal()">✕</button>
         </div>
-        <div class="import-modal-body">
-            <div class="import-summary" id="jiSummary"></div>
+        <!-- flex:none 防止 body 区域 flex:1 撑开；padding 收紧一点适配手机 -->
+        <div class="import-modal-body" style="flex:none; padding:12px 16px;">
+            <div class="import-summary" id="jiSummary" style="margin-bottom:10px;"></div>
             <div class="import-mode-group">
                 <label class="mode-title">选择导入方式：</label>
                 <label class="import-radio-item selected" id="jiLabel-merge" onclick="selectJsonImportMode('merge')">
                     <input type="radio" name="jiMode" value="merge" checked>
                     <div class="import-radio-label">
                         <div class="import-radio-name">合并导入 <span style="background:#e8f5e9;color:#2e7d32;font-size:11px;padding:1px 6px;border-radius:4px;margin-left:4px;">推荐</span></div>
-                        <div class="import-radio-desc">按名称去重：本店已有同名"待填写"条目的跳过，没有的追加为新待填写。已填日期的记录永远不动</div>
+                        <div class="import-radio-desc">按名称去重：已有同名"待填写"条目的跳过，没有的追加。已填日期的记录不动</div>
                     </div>
                 </label>
                 <label class="import-radio-item danger-mode" id="jiLabel-overwrite" onclick="selectJsonImportMode('overwrite')">
                     <input type="radio" name="jiMode" value="overwrite">
                     <div class="import-radio-label">
                         <div class="import-radio-name">覆盖导入 <span style="background:#ffcdd2;color:#c62828;font-size:11px;padding:1px 6px;border-radius:4px;margin-left:4px;">危险</span></div>
-                        <div class="import-radio-desc">清除现有"待填写"条目，写入文件全部产品作为新待填写。已填日期的记录保留不动</div>
+                        <div class="import-radio-desc">清除现有"待填写"条目，换成文件内容。已填日期的记录保留不动</div>
                     </div>
                 </label>
             </div>
