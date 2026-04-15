@@ -1,22 +1,13 @@
 <!DOCTYPE html>
-<!--
-  食品效期助手 V7.2
-  ================================================================
-  【CDN 本地化说明】
-  本工具默认先加载同目录下的本地库文件，找不到时自动回退 CDN。
-  部署到 GitHub 时，建议将以下两个文件下载到同一目录：
-    ① xlsx.full.min.js  — https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js
-    ② echarts.min.js    — https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js
-  ================================================================
--->
+
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>食品效期助手 V7.2</title>
-    <!-- 直接从 CDN 加载（同步阻塞），确保 XLSX/echarts 在页面使用前完成加载 -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+    <title>食品效期助手 V7.4</title>
+    <!-- CDN 库采用 defer 异步加载，不阻塞首屏渲染 -->
+    <script defer src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
     <style>
         :root {
             --primary:   #4CAF50; --primary-dk: #388E3C;
@@ -203,6 +194,8 @@
         .store-item-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
         .store-active-check { color: var(--primary); font-weight: bold; font-size: 18px; }
         .store-delete-btn { background: none; border: none; color: #ddd; font-size: 16px; cursor: pointer; padding: 4px; }
+        .store-edit-btn   { background: none; border: none; color: #bbb; font-size: 14px; cursor: pointer; padding: 4px; line-height: 1; }
+        .store-edit-btn:active { color: var(--primary); }
         .store-icon-big { font-size: 22px; flex-shrink: 0; }
         .store-add-area { padding: 13px 18px; border-top: 1px solid #eee; flex-shrink: 0; }
         .store-add-row { display: flex; gap: 8px; }
@@ -458,6 +451,11 @@
 
 <script>
 // ================================================================
+// 全局版本号（统一管理，升级时只改这里）
+// ================================================================
+const APP_VERSION = 'V7.4';
+
+// ================================================================
 // 工具函数
 // ================================================================
 function getLocalDateStr(date) {
@@ -501,21 +499,24 @@ function getLifeInDays(life, unit) {
     if (unit === 'months') return n * 30.44;
     return n;
 }
+/** 日期字符串转 UTC 毫秒（纯数字运算，避免 Date 构造器时区陷阱） */
+function parseDateMs(s) {
+    if (!s) return 0;
+    const pp = s.split('-').map(Number);
+    return Date.UTC(pp[0], pp[1]-1, pp[2]);
+}
 function diffDays(aStr, bStr) {
-    const pa = aStr.split('-').map(Number), pb = bStr.split('-').map(Number);
-    const a = Date.UTC(pa[0], pa[1]-1, pa[2]);
-    const b = Date.UTC(pb[0], pb[1]-1, pb[2]);
-    return Math.round((b - a) / 86400000);
+    return Math.round((parseDateMs(bStr) - parseDateMs(aStr)) / 86400000);
 }
 function escapeHtml(str) {
     return String(str == null ? '' : str)
         .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
         .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
-/** 生成不重复 ID：毫秒时间戳 + 随机尾数，避免快速连续操作碰撞 */
+/** 生成不重复 ID：毫秒时间戳 * 1000 + 随机尾数，避免快速连续操作或多设备碰撞 */
 let _lastId = 0;
 function genId() {
-    let id = Date.now();
+    let id = Date.now() * 1000 + Math.floor(Math.random() * 1000);
     if (id <= _lastId) id = _lastId + 1;
     _lastId = id;
     return id;
@@ -629,6 +630,54 @@ function addStore() {
     showToast(`✅ 已新建门店：${name}`);
 }
 
+// ================================================================
+// 门店重命名（内联编辑）
+// ================================================================
+function renameStore(storeId) {
+    const store = stores.find(s => s.id === storeId);
+    if (!store) return;
+    // 找到列表中该门店的名称节点，替换为 input
+    const body   = document.querySelector(`.store-item-body[data-store-id="${storeId}"]`);
+    if (!body) return;
+    const nameEl = body.querySelector('.store-item-name');
+    if (!nameEl) return;
+    const oldName = store.name;
+
+    const input = document.createElement('input');
+    input.value    = oldName;
+    input.maxLength = 20;
+    input.style.cssText = 'width:100%;padding:4px 8px;font-size:14px;font-weight:600;color:#222;border:1.5px solid var(--primary);border-radius:6px;outline:none;background:#fff;';
+    nameEl.replaceWith(input);
+    input.focus();
+    input.select();
+
+    const commit = () => {
+        const newName = input.value.trim();
+        // 恢复原始 DOM（无论结果如何）
+        const restored = document.createElement('div');
+        restored.className = 'store-item-name';
+        restored.textContent = newName || oldName;
+        input.replaceWith(restored);
+
+        if (!newName || newName === oldName) return;
+        if (newName.length > 20) { showToast('⚠️ 名称最多 20 字'); renderStoreList(); return; }
+        if (stores.some(s => s.id !== storeId && s.name === newName)) {
+            showToast('⚠️ 已存在同名门店'); renderStoreList(); return;
+        }
+        store.name = newName;
+        safeLSSet('foodStores', JSON.stringify(stores));
+        if (storeId === activeStoreId) updateStoreHeader();
+        renderStoreList();
+        showToast(`✅ 已重命名为：${newName}`);
+    };
+
+    input.addEventListener('blur', commit);
+    input.addEventListener('keydown', e => {
+        if (e.key === 'Enter')  { input.blur(); }
+        if (e.key === 'Escape') { input.value = oldName; input.blur(); }
+    });
+}
+
 function deleteStore(storeId) {
     if (stores.length <= 1) return showToast('⚠️ 至少需要保留一个门店');
     const store = stores.find(s => s.id === storeId);
@@ -650,6 +699,7 @@ function deleteStore(storeId) {
 }
 
 function openStorePicker() {
+    refreshStoreCaches();
     renderStoreList();
     document.getElementById('newStoreInput').value = '';
     document.getElementById('storePickerModal').classList.add('active');
@@ -664,14 +714,18 @@ function renderStoreList() {
     stores.forEach(store => {
         const isActive = store.id === activeStoreId;
         let count = 0, warnCount = 0, expiredCount = 0;
-        try {
-            const d = localStorage.getItem(`foodProducts_${store.id}`);
-            const cfg = localStorage.getItem(`foodConfig_${store.id}`);
-            const warnDays = cfg ? (JSON.parse(cfg).warnDays || 7) : 7;
+        if (isActive) {
+            // 当前门店直接用内存数据，无需 parse
             const todayStr = getLocalDateStr();
-            const threshold = getExpiry(todayStr, warnDays, 'days');
-            if (d) { const arr = JSON.parse(d); count = arr.length; arr.forEach(p => { if (p.expiry < todayStr) expiredCount++; else if (p.expiry <= threshold) warnCount++; }); }
-        } catch(e) {}
+            const threshold = getExpiry(todayStr, config.warnDays, 'days');
+            count = products.length;
+            products.forEach(p => { if (p.expiry < todayStr) expiredCount++; else if (p.expiry <= threshold) warnCount++; });
+        } else {
+            // 非当前门店：使用缓存的元数据统计，避免 JSON.parse 大数组
+            count = store._cachedCount || 0;
+            warnCount = store._cachedWarn || 0;
+            expiredCount = store._cachedExpired || 0;
+        }
         let metaHtml = `共 ${count} 件`;
         if (expiredCount > 0) metaHtml += ` · <span style="color:#d32f2f;">${expiredCount} 件已过期</span>`;
         else if (warnCount > 0) metaHtml += ` · <span style="color:#ef6c00;">${warnCount} 件临期</span>`;
@@ -685,13 +739,41 @@ function renderStoreList() {
             </div>
             <div class="store-item-right">
                 ${isActive ? '<span class="store-active-check">✓</span>' : ''}
+                <button class="store-edit-btn" title="重命名" data-edit-store="${escapeHtml(store.id)}">✏️</button>
                 ${stores.length > 1 ? `<button class="store-delete-btn" data-del-store="${escapeHtml(store.id)}">🗑</button>` : ''}
             </div>`;
         // 安全绑定事件
         div.querySelector('.store-item-body').addEventListener('click', () => switchStore(store.id));
+        const editBtn = div.querySelector('.store-edit-btn');
+        if (editBtn) editBtn.addEventListener('click', (e) => { e.stopPropagation(); renameStore(store.id); });
         const delBtn = div.querySelector('.store-delete-btn');
         if (delBtn) delBtn.addEventListener('click', (e) => { e.stopPropagation(); deleteStore(store.id); });
         list.appendChild(div);
+    });
+}
+
+/** 刷新非当前门店的缓存统计（仅在打开门店选择器前调用一次） */
+function refreshStoreCaches() {
+    const todayStr = getLocalDateStr();
+    stores.forEach(store => {
+        if (store.id === activeStoreId) return; // 当前门店用内存数据
+        try {
+            const d = localStorage.getItem(`foodProducts_${store.id}`);
+            const cfg = localStorage.getItem(`foodConfig_${store.id}`);
+            const warnDays = cfg ? (JSON.parse(cfg).warnDays || 7) : 7;
+            const threshold = getExpiry(todayStr, warnDays, 'days');
+            if (d) {
+                const arr = JSON.parse(d);
+                store._cachedCount = arr.length;
+                store._cachedWarn = 0;
+                store._cachedExpired = 0;
+                arr.forEach(p => { if (p.expiry < todayStr) store._cachedExpired++; else if (p.expiry <= threshold) store._cachedWarn++; });
+            } else {
+                store._cachedCount = 0; store._cachedWarn = 0; store._cachedExpired = 0;
+            }
+        } catch(e) {
+            store._cachedCount = 0; store._cachedWarn = 0; store._cachedExpired = 0;
+        }
     });
 }
 
@@ -863,9 +945,10 @@ function showToast(msg, dur = 2200) {
     _toastTimer = setTimeout(() => t.classList.remove('show'), dur);
 }
 let onConfirmCallback = null;
-function showConfirmModal(title, msg, cb) {
+function showConfirmModal(title, msg, cb, confirmText) {
     document.getElementById('confirmModalTitle').textContent = title;
     document.getElementById('confirmModalText').textContent  = msg;
+    document.getElementById('confirmModalBtn').textContent   = confirmText || '确定';
     onConfirmCallback = cb;
     document.getElementById('customConfirmModal').classList.add('active');
 }
@@ -888,7 +971,7 @@ let isBatchMode = false, isAnalysisOpen = false, chartInstance = null, currentSo
 // ================================================================
 // 初始化
 // ================================================================
-window.onload = function() {
+document.addEventListener('DOMContentLoaded', function() {
     initStores(); loadStoreData(); updateStoreHeader();
     document.getElementById('warnDays').value    = config.warnDays;
     document.getElementById('defProdDate').value = config.defProdDate;
@@ -903,7 +986,7 @@ window.onload = function() {
         });
     });
     setupAutocomplete('prodName', 'prodNameSuggest');
-    setupAutocomplete('searchInput', 'searchSuggest', renderAllList);
+    setupAutocomplete('searchInput', 'searchSuggest'); // 不传 onSel，避免与防抖重复触发 renderAllList
     // 搜索防抖：150ms 后才真正渲染，避免高频输入卡顿
     let _searchDebounce;
     document.getElementById('searchInput').addEventListener('input', () => {
@@ -913,12 +996,11 @@ window.onload = function() {
     window.addEventListener('resize', () => { if (chartInstance) chartInstance.resize(); });
     // 页面关闭前强制备份一次（绕过节流）
     window.addEventListener('beforeunload', () => {
-        if (products.length) {
-            _lastBackupTs = 0;
-            autoBackup();
-        }
+        if (products.length) { _lastBackupTs = 0; autoBackup(); }
     });
-};
+    // 定时备份兜底：每 5 分钟尝试一次（应对移动端 beforeunload 不可靠问题）
+    setInterval(() => { if (products.length) autoBackup(); }, 5 * 60 * 1000);
+});
 
 // ================================================================
 // 导航
@@ -937,7 +1019,7 @@ function toggleMenu() {
     ov.style.display = sb.classList.contains('active') ? 'block' : 'none';
 }
 function saveSettings() {
-    config.warnDays   = parseInt(document.getElementById('warnDays').value) || 7;
+    config.warnDays   = Math.max(1, parseInt(document.getElementById('warnDays').value) || 7);
     config.defProdDate = document.getElementById('defProdDate').value;
     config.defLife    = document.getElementById('defLife').value;
     config.defUnit    = document.getElementById('defUnit').value;
@@ -970,21 +1052,22 @@ function saveProduct() {
     const date     = document.getElementById('prodDate').value;
     const lifeRaw  = document.getElementById('shelfLife').value;
     const unit     = document.getElementById('timeUnit').value;
-    const editId   = document.getElementById('editId').value;
+    const editIdRaw= document.getElementById('editId').value;
     const qtyRaw   = document.getElementById('prodQty').value;
     const qty      = qtyRaw ? Math.max(1, parseInt(qtyRaw) || 1) : 1;
+    const editIdNum= editIdRaw ? parseInt(editIdRaw) : null;
 
     if (!name || !lifeRaw || !date) return showToast('⚠️ 请填写完整信息！');
     const life = parseInt(lifeRaw);
     if (isNaN(life) || life <= 0) return showToast('⚠️ 保质期时长须为正整数');
 
-    const isDup = products.some(p => p.name === name && p.date === date && p.id !== parseInt(editId));
+    const isDup = products.some(p => p.name === name && p.date === date && p.id !== editIdNum);
     if (isDup) return showToast('⚠️ 库中已存在相同名称和生产日期的记录！');
 
     const expiry  = getExpiry(date, life, unit);
-    const product = { id: editId ? parseInt(editId) : genId(), name, category, location, date, life, unit, expiry, qty };
+    const product = { id: editIdNum || genId(), name, category, location, date, life, unit, expiry, qty };
 
-    if (editId) {
+    if (editIdNum) {
         const idx = products.findIndex(p => p.id === product.id);
         if (idx !== -1) products[idx] = product;
     } else {
@@ -992,7 +1075,7 @@ function saveProduct() {
     }
     syncData();
     resetForm();
-    if (!editId) {
+    if (!editIdNum) {
         const btn = document.getElementById('saveProdBtn');
         const old = btn.textContent;
         btn.textContent = "✅ 保存成功！"; btn.style.backgroundColor = "#2E7D32";
@@ -1099,10 +1182,9 @@ function batchDelete() {
             document.getElementById('selectAllCB').checked = false;
             syncData();
             showToast(`已删除 ${cnt} 条记录`);
-        }
+        },
+        `确认删除 ${cnt} 条`
     );
-    // 让弹窗按钮更醒目
-    document.getElementById('confirmModalBtn').textContent = `确认删除 ${cnt} 条`;
 }
 function toggleAnalysis() {
     isAnalysisOpen = !isAnalysisOpen;
@@ -1122,14 +1204,13 @@ function updateChart() {
 
 // ================================================================
 // 商品卡片（含倒计时/逾期天数）
+// todayMs 从外部传入，避免每张卡片重复解析
 // ================================================================
-function createProductCard(p, todayStr, warningThreshold) {
+function createProductCard(p, todayStr, warningThreshold, todayMs) {
     let statusClass = 'ok';
     let badgeHtml = '<span class="status-badge" style="background:#e8f5e9;color:#2e7d32">安全</span>';
-    const parseMs = s => { if(!s) return 0; const pp=s.split('-').map(Number); return Date.UTC(pp[0],pp[1]-1,pp[2]); };
-    const dateMs   = parseMs(p.date);
-    const expiryMs = parseMs(p.expiry);
-    const todayMs  = parseMs(todayStr);
+    const dateMs   = parseDateMs(p.date);
+    const expiryMs = parseDateMs(p.expiry);
     const progress = expiryMs > dateMs ? Math.max(0, Math.min(100, ((todayMs - dateMs) / (expiryMs - dateMs)) * 100)) : 0;
 
     let countdownHtml = '';
@@ -1180,10 +1261,10 @@ function renderRecentList() {
     const list = document.getElementById('recentProductList');
     list.innerHTML = '';
     if (!products.length) { list.innerHTML = `<div style="text-align:center;color:#999;padding:20px;">还没有录入任何产品</div>`; return; }
-    const ts = getLocalDateStr(), wt = getExpiry(ts, config.warnDays, 'days');
+    const ts = getLocalDateStr(), wt = getExpiry(ts, config.warnDays, 'days'), tMs = parseDateMs(ts);
     const sorted = [...products].sort((a,b) => b.id - a.id);
     const SHOW_MAX = 10;
-    sorted.slice(0, SHOW_MAX).forEach(p => list.appendChild(createProductCard(p, ts, wt)));
+    sorted.slice(0, SHOW_MAX).forEach(p => list.appendChild(createProductCard(p, ts, wt, tMs)));
     if (sorted.length > SHOW_MAX) {
         const link = document.createElement('div');
         link.style.cssText = 'text-align:center;padding:14px;color:var(--primary);font-size:14px;cursor:pointer;font-weight:600;';
@@ -1193,19 +1274,29 @@ function renderRecentList() {
     }
 }
 
+// ================================================================
+// 库存列表（分页加载：每批 30 条，滚到底部自动加载下一批）
+// ================================================================
+const PAGE_SIZE = 30;
+let _filteredCache = [];  // 当前排序+过滤后的完整列表缓存
+let _renderedCount = 0;   // 已渲染条数
+
 function renderAllList() {
     const list = document.getElementById('allProductList');
     const mode = document.getElementById('sortMode').value;
     const kw   = document.getElementById('searchInput').value.trim().toLowerCase();
     list.innerHTML = '';
-    let filtered = products.filter(p =>
+    _renderedCount = 0;
+
+    _filteredCache = products.filter(p =>
         p.name.toLowerCase().includes(kw) ||
-        (p.category && p.category.includes(kw)) ||
-        (p.location && p.location.includes(kw))
+        (p.category && p.category.toLowerCase().includes(kw)) ||
+        (p.location && p.location.toLowerCase().includes(kw))
     );
-    document.getElementById('listCount').textContent = kw ? `搜索结果 (${filtered.length})` : `全部商品 (${filtered.length})`;
-    if (!filtered.length) { list.innerHTML = `<div style="text-align:center;color:#999;padding:40px;">没搜到相关产品</div>`; return; }
-    filtered.sort((a,b) => {
+    document.getElementById('listCount').textContent = kw ? `搜索结果 (${_filteredCache.length})` : `全部商品 (${_filteredCache.length})`;
+    if (!_filteredCache.length) { list.innerHTML = `<div style="text-align:center;color:#999;padding:40px;">没搜到相关产品</div>`; return; }
+
+    _filteredCache.sort((a,b) => {
         let vA, vB;
         if      (mode==='expiry') { vA=a.expiry||''; vB=b.expiry||''; }
         else if (mode==='date')   { vA=a.date||'';   vB=b.date||''; }
@@ -1213,9 +1304,34 @@ function renderAllList() {
         else if (mode==='life')   { vA=getLifeInDays(a.life,a.unit); vB=getLifeInDays(b.life,b.unit); return currentSortOrder==='asc' ? vA-vB : vB-vA; }
         return currentSortOrder==='asc' ? (vA<vB?-1:vA>vB?1:0) : (vB<vA?-1:vB>vA?1:0);
     });
-    const ts = getLocalDateStr(), wt = getExpiry(ts, config.warnDays, 'days');
-    filtered.forEach(p => list.appendChild(createProductCard(p, ts, wt)));
+
+    renderNextPage();
     if (isAnalysisOpen) updateChart();
+}
+
+function renderNextPage() {
+    const list = document.getElementById('allProductList');
+    const ts  = getLocalDateStr(), wt = getExpiry(ts, config.warnDays, 'days'), tMs = parseDateMs(ts);
+    const end = Math.min(_renderedCount + PAGE_SIZE, _filteredCache.length);
+
+    // 先移除旧的「加载更多」按钮
+    const oldBtn = document.getElementById('loadMoreBtn');
+    if (oldBtn) oldBtn.remove();
+
+    for (let i = _renderedCount; i < end; i++) {
+        list.appendChild(createProductCard(_filteredCache[i], ts, wt, tMs));
+    }
+    _renderedCount = end;
+
+    // 如果还有更多，显示「加载更多」按钮
+    if (_renderedCount < _filteredCache.length) {
+        const btn = document.createElement('div');
+        btn.id = 'loadMoreBtn';
+        btn.style.cssText = 'text-align:center;padding:14px;color:var(--primary);font-size:14px;cursor:pointer;font-weight:600;background:#f0f9f0;border-radius:8px;margin:8px 0;';
+        btn.textContent = `加载更多（已显示 ${_renderedCount}/${_filteredCache.length}）`;
+        btn.onclick = renderNextPage;
+        list.appendChild(btn);
+    }
 }
 
 function toggleSortOrder() {
@@ -1228,11 +1344,13 @@ function toggleSortOrder() {
 // 数据同步（带自动备份）
 // ================================================================
 function syncData(withBackup = true) {
-    if (safeLSSet(sk('foodProducts'), JSON.stringify(products)) && withBackup) {
-        autoBackup();
-        updateStoreLastModified();
+    const saved = safeLSSet(sk('foodProducts'), JSON.stringify(products));
+    if (saved) {
+        if (withBackup) { autoBackup(); updateStoreLastModified(); }
+        renderRecentList(); renderAllList(); updateWarnBanner();
     }
-    renderRecentList(); renderAllList(); updateWarnBanner();
+    // 写入失败时 safeLSSet 已弹出"存储空间已满"提示，不再重复渲染
+    // 避免 UI 显示未持久化的数据让用户误以为已保存
 }
 
 // ================================================================
@@ -1355,9 +1473,9 @@ function confirmImport() {
                 closeImportModal();
                 showToast(`✅ 覆盖导入完成，共 ${products.length} 条`, 3000);
                 switchTab('list');
-            }
+            },
+            `确认覆盖（清空原有 ${products.length} 条）`
         );
-        document.getElementById('confirmModalBtn').textContent = `确认覆盖（清空原有 ${products.length} 条）`;
     } else {
         // 合并：只添加不重复的
         let count = 0;
@@ -1380,9 +1498,15 @@ function confirmImport() {
 // ================================================================
 // XLSX 可用性检查
 // ================================================================
+let _xlsxCheckAttempts = 0;
 function checkXLSX() {
-    if (typeof XLSX !== 'undefined') return true;
-    showToast('⏳ 表格库加载中，请稍后重试…', 3000);
+    if (typeof XLSX !== 'undefined') { _xlsxCheckAttempts = 0; return true; }
+    _xlsxCheckAttempts++;
+    if (_xlsxCheckAttempts >= 2) {
+        showToast('❌ 表格库加载失败，请检查网络后刷新页面', 5000);
+    } else {
+        showToast('⏳ 表格库加载中，请稍后重试…', 3000);
+    }
     return false;
 }
 
@@ -1408,7 +1532,7 @@ function exportJsonMetadata() {
         const storeName = getActiveStore().name;
         downloadJson({
             _type:      'food-tool-metadata',
-            version:    'V7.2',
+            version:    APP_VERSION,
             exportTime: Date.now(),
             storeName,
             storeId:    activeStoreId,
@@ -1458,7 +1582,7 @@ function exportToExcel() {
             ['门店名称', storeName],
             ['导出时间', nowStr],
             ['记录条数', products.length],
-            ['工具版本', 'V7.2'],
+            ['工具版本', APP_VERSION],
         ];
 
         const wb = XLSX.utils.book_new();
@@ -1483,17 +1607,36 @@ function handleJsonImport(e) {
             const data = JSON.parse(evt.target.result);
             // 兼容：元数据包（_type 字段）和旧版备份（无 _type）
             if (!Array.isArray(data.products)) throw new Error('格式错误：缺少 products 字段');
+
+            // 校验并过滤不合格记录（至少需要 name 和 id）
+            const validProducts = data.products.filter(p =>
+                p && typeof p === 'object' && p.name && (p.id || p.id === 0)
+            ).map(p => ({
+                id:       p.id || genId(),
+                name:     String(p.name),
+                category: p.category || '其他',
+                location: p.location || '常温',
+                date:     p.date || '',
+                life:     parseInt(p.life) || 0,
+                unit:     ['days','months','years'].includes(p.unit) ? p.unit : 'days',
+                expiry:   p.expiry || (p.date && p.life ? getExpiry(p.date, p.life, p.unit || 'days') : ''),
+                qty:      Math.max(1, parseInt(p.qty) || 1)
+            }));
+            const skipped = data.products.length - validProducts.length;
+
             const typeName  = data._type === 'food-tool-metadata' ? '元数据包' : '备份文件';
             const fromStore = data.storeName || '未知门店';
-            const pCount    = data.products.length;
+            const pCount    = validProducts.length;
             const timeStr   = fmtDatetime(data.exportTime);
+            let confirmMsg  = `来源：${fromStore}，共 ${pCount} 条有效记录，导出于 ${timeStr}。`;
+            if (skipped > 0) confirmMsg += `\n（${skipped} 条格式异常记录已自动过滤）`;
+            confirmMsg += '\n\n导入后将覆盖当前门店数据，建议先导出当前备份。是否继续？';
+
             showConfirmModal(
                 `导入${typeName}`,
-                `来源：${fromStore}，共 ${pCount} 条记录，导出于 ${timeStr}。
-
-导入后将覆盖当前门店数据，建议先导出当前备份。是否继续？`,
+                confirmMsg,
                 () => {
-                    products = data.products;
+                    products = validProducts;
                     if (data.config) {
                         config = { ...config, ...data.config };
                         safeLSSet(sk('foodConfig'), JSON.stringify(config));
@@ -1505,7 +1648,9 @@ function handleJsonImport(e) {
                     if (data.customCategories) { customCategories = data.customCategories; saveCategories(); }
                     syncData();
                     renderCategorySelect(); renderCategoryManager();
-                    showToast(`✅ 已导入 ${products.length} 条记录`, 3000);
+                    let msg = `✅ 已导入 ${products.length} 条记录`;
+                    if (skipped > 0) msg += `（跳过 ${skipped} 条异常）`;
+                    showToast(msg, 3000);
                     switchTab('list');
                 }
             );
@@ -1526,9 +1671,9 @@ function clearAllData() {
     showConfirmModal(
         `⚠️ 清空「${name}」所有记录`,
         `将永久删除该门店全部 ${products.length} 条产品数据。门店本身保留，此操作不可撤销！`,
-        () => { products = []; syncData(); toggleMenu(); showToast('已清空本店所有记录'); }
+        () => { products = []; syncData(); toggleMenu(); showToast('已清空本店所有记录'); },
+        `确认清空 ${products.length} 条`
     );
-    document.getElementById('confirmModalBtn').textContent = `确认清空 ${products.length} 条`;
 }
 </script>
 </body>
