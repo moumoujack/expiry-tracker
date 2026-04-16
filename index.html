@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>食品效期助手 V8.2</title>
+    <title>食品效期助手</title>
     <script defer src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
     <style>
@@ -586,7 +586,9 @@
 // ================================================================
 // 全局版本号
 // ================================================================
-const APP_VERSION = 'V8.2';
+const APP_VERSION = 'V8.3';
+// 启动时把版本号同步到页面标题，避免 title 和 APP_VERSION 分头维护时漏改
+document.title = `食品效期助手 ${APP_VERSION}`;
 
 // ================================================================
 // 全局常量
@@ -652,13 +654,31 @@ function escapeHtml(str) {
         .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 let _lastId = 0;
+
+// 【V8.3 新增】为多设备同步预留。浏览器端生成一次稳定的 deviceId(6 位 base36)并缓存到 localStorage。
+// Capacitor APK 环境可在启动时覆盖本 key,用原生的设备 UID 替代。
+function _getDeviceId() {
+    try {
+        let d = localStorage.getItem('foodDeviceId');
+        if (!d) {
+            d = Math.random().toString(36).slice(2, 8).padEnd(6, '0').slice(0, 6);
+            localStorage.setItem('foodDeviceId', d);
+        }
+        return d;
+    } catch(e) {
+        return 'local0'; // 隐私模式等 localStorage 不可用时的兜底
+    }
+}
+
 function genId() {
     let id = Date.now() * 1000 + Math.floor(Math.random() * 1000);
     if (id <= _lastId) id = _lastId + 1;
     _lastId = id;
-    // 固定长度 17 位字符串，保证字典序比较结果与数值顺序一致
-    // （Date.now()*1000 当前约 16 位，padStart 后未来也稳定 17 位）
-    return String(id).padStart(17, '0');
+    // 结构:[17 位数字时间戳] + [6 位 deviceId]  总长 23 字符
+    // - 前 17 位保证字典序 = 时间顺序,兼容现有 localeCompare(numeric:true) 排序逻辑
+    // - 后 6 位 deviceId 降低多设备同毫秒冲突概率(从 1/1000 降到 ~1/6.8 亿)
+    // - 为未来的 Capacitor 多门店同步打基础:同一时刻 A/B 店同时生成 id 不会撞
+    return String(id).padStart(17, '0') + _getDeviceId();
 }
 
 // ================================================================
@@ -724,8 +744,21 @@ function loadStoreData() {
     try { const s = localStorage.getItem(sk('foodConfig')); if (s) config = { ...config, ...JSON.parse(s) }; } catch(e) {}
     customCategories = [];
     try { const s = localStorage.getItem(sk('foodCategories')); if (s) customCategories = JSON.parse(s); } catch(e) {}
+    // 切换门店或重新加载数据后,分类列表可能完全不同,强制下次 renderCategorySelect 走慢路径重建
+    if (typeof markCategoryDirty === 'function') markCategoryDirty();
     products = [];
     try { const s = localStorage.getItem(sk('foodProducts')); if (s) products = JSON.parse(s); } catch(e) {}
+    // 【V8.3 迁移】统一 id 为字符串。老版本(V4.5 及以前)的 id 是 Number,
+    // 比较时只能依赖 String(p.id) 兜底。加载时做一次性规范化,
+    // 后续代码就可以安全地用严格相等 ===,无需每处都 String() 包装。
+    let idDirty = false;
+    products.forEach(p => {
+        if (p.id != null && typeof p.id !== 'string') {
+            p.id = String(p.id);
+            idDirty = true;
+        }
+    });
+    if (idDirty) safeLSSet(sk('foodProducts'), JSON.stringify(products));
 }
 
 function switchStore(storeId) {
@@ -738,20 +771,37 @@ function switchStore(storeId) {
     showToast(`✅ 已切换到：${getActiveStore().name}`);
 }
 
-function afterStoreSwitch() {
-    updateStoreHeader();
+// 重置页面瞬态 UI 状态(批量模式/分析图/排序方向/列表模式)。
+// 在切换门店、恢复备份等场景复用,避免多份几乎相同的 DOM 重置代码。
+function resetTransientUIState() {
     if (chartInstance) { chartInstance.dispose(); chartInstance = null; }
-    isAnalysisOpen = false; isBatchMode = false; currentSortOrder = 'asc';
+    // 同步重置图表增量更新的状态标记,避免 dispose 后下次仍走 else 分支导致无数据
+    _chartDataSig = null;
+    _chartInitialized = false;
+    isAnalysisOpen = false;
+    isBatchMode = false;
+    currentSortOrder = 'asc';
     document.getElementById('chartContainer').style.display = 'none';
     document.getElementById('btnAnalysis').style.backgroundColor = 'white';
     document.getElementById('batchPanel').style.display = 'none';
     document.getElementById('btnBatch').style.backgroundColor = 'white';
+    document.getElementById('selectAllCB').checked = false;
     document.getElementById('sortOrderBtn').textContent = '⬆️';
     document.getElementById('sortMode').value = 'expiry';
+}
+
+// 把 config 回填到顶部设置栏的几个输入框
+function syncConfigToSettingsInputs() {
     document.getElementById('warnDays').value    = config.warnDays;
     document.getElementById('defProdDate').value = config.defProdDate;
     document.getElementById('defLife').value     = config.defLife;
     document.getElementById('defUnit').value     = config.defUnit;
+}
+
+function afterStoreSwitch() {
+    updateStoreHeader();
+    resetTransientUIState();
+    syncConfigToSettingsInputs();
     renderCategorySelect('其他'); renderCategoryManager();
     renderBackupSlots();
     resetForm(); renderRecentList(); renderAllList(); updateWarnBanner();
@@ -943,18 +993,22 @@ function renderStoreList() {
 // 自动备份
 // ================================================================
 let _lastBackupTs = 0;
+// Quota 失败后的延长冷却时间(ms),避免短时间反复触发失败 toast
+const _BACKUP_QUOTA_COOLDOWN = 5 * 60 * 1000;
+
 function autoBackup() {
     const now = Date.now();
     if (now - _lastBackupTs < 60000) return; // 60 秒节流
     _lastBackupTs = now;
-    const snap = JSON.stringify({ products, config, customCategories, ts: now, storeId: activeStoreId });
+    const snap = JSON.stringify({ products, config, customCategories, ts: now, storeId: activeStoreId }, _stripTempFields);
     try {
         // 按 3→2→1 顺序依次轮转,任何一步失败立即终止,避免备份链错位污染已有快照
+        // 失败后把 _lastBackupTs 推到未来一段时间,避免 5 分钟内的下次 autoBackup 再次命中同样的 Quota 失败
         const b2 = localStorage.getItem(sk('foodBackup_2'));
-        if (b2 && !safeLSSet(sk('foodBackup_3'), b2)) { _lastBackupTs = 0; return; }
+        if (b2 && !safeLSSet(sk('foodBackup_3'), b2)) { _lastBackupTs = now + _BACKUP_QUOTA_COOLDOWN; return; }
         const b1 = localStorage.getItem(sk('foodBackup_1'));
-        if (b1 && !safeLSSet(sk('foodBackup_2'), b1)) { _lastBackupTs = 0; return; }
-        safeLSSet(sk('foodBackup_1'), snap);
+        if (b1 && !safeLSSet(sk('foodBackup_2'), b1)) { _lastBackupTs = now + _BACKUP_QUOTA_COOLDOWN; return; }
+        if (!safeLSSet(sk('foodBackup_1'), snap))    { _lastBackupTs = now + _BACKUP_QUOTA_COOLDOWN; return; }
     } catch(e) { console.warn('autoBackup 异常:', e); }
     renderBackupSlots();
 }
@@ -978,7 +1032,9 @@ function renderBackupSlots() {
                     <div class="backup-slot-info">备份 ${n}：${cnt} 条记录</div>
                     <div class="backup-slot-time">${fmtDatetime(b.ts)}</div>
                 </div>
-                <button class="backup-restore-btn" onclick="restoreBackup(${n})">恢复</button>`;
+                <button class="backup-restore-btn" data-restore="${n}">恢复</button>`;
+            // 直接挂 click,避免动态 HTML 里的 onclick 字符串依赖全局函数名
+            div.querySelector('.backup-restore-btn').addEventListener('click', () => restoreBackup(n));
             container.appendChild(div);
         } catch(e) {}
     });
@@ -1000,20 +1056,14 @@ function restoreBackup(slot) {
             config = b.config || config;
             customCategories = b.customCategories || [];
             saveCategories(); safeLSSet(sk('foodConfig'), JSON.stringify(config));
-            document.getElementById('warnDays').value    = config.warnDays;
-            document.getElementById('defProdDate').value = config.defProdDate;
-            document.getElementById('defLife').value     = config.defLife;
-            document.getElementById('defUnit').value     = config.defUnit;
-            renderCategorySelect(); renderCategoryManager();
+            syncConfigToSettingsInputs();
+            renderCategorySelect('其他'); renderCategoryManager();
 
-            // 【Bug修复】恢复备份后必须退出批量模式。
-            // 若恢复前处于批量选择状态（isBatchMode=true），syncData 会调用
-            // renderRecentList，导致录入页的最近录入卡片也渲染出选择框。
-            // 在 syncData 之前把批量模式重置干净，再渲染就不会有残留选择框。
-            isBatchMode = false;
-            document.getElementById('batchPanel').style.display = 'none';
-            document.getElementById('btnBatch').style.backgroundColor = 'white';
-            document.getElementById('selectAllCB').checked = false;
+            // 【Bug修复】恢复备份后必须退出批量模式、清空所有瞬态 UI 状态。
+            // 若恢复前处于批量选择状态,syncData 会调用 renderRecentList,
+            // 导致录入页的最近录入卡片也渲染出选择框。resetTransientUIState
+            // 统一把 batch/analysis/sort 都清掉,再渲染就不会有残留。
+            resetTransientUIState();
 
             syncData(false);
             showToast(`✅ 已恢复备份 ${slot}（${products.length} 条记录）`);
@@ -1076,9 +1126,40 @@ const BUILTIN_CATEGORIES = [
 ];
 let customCategories = [];
 function getAllCategories() { return [...BUILTIN_CATEGORIES, ...customCategories]; }
+
+// 【优化】只有分类增删时才重建 option 列表,否则仅更新 selected,
+// 能显著降低 resetForm / saveProduct 等高频路径的重排成本
+let _catSelectDirty = true;
+function markCategoryDirty() { _catSelectDirty = true; }
+
 function renderCategorySelect(sel) {
     const el = document.getElementById('prodCategory');
     const cur = sel !== undefined ? sel : el.value;
+
+    // 快路径:option 列表没变,只需要切换 selected
+    if (!_catSelectDirty && el.options.length > 0) {
+        let matched = false;
+        for (let i = 0; i < el.options.length; i++) {
+            const opt = el.options[i];
+            // 清掉旧的"未知分类"占位
+            if (opt.textContent.includes('（未知分类）') && opt.value !== cur) {
+                el.remove(i); i--; continue;
+            }
+            if (opt.value === cur) { opt.selected = true; matched = true; }
+            else { opt.selected = false; }
+        }
+        if (!matched && cur) {
+            // 补一个未知分类占位(同慢路径逻辑)
+            const o = document.createElement('option');
+            o.value = cur;
+            o.textContent = `❓ ${cur}（未知分类）`;
+            o.selected = true;
+            el.appendChild(o);
+        }
+        return;
+    }
+
+    // 慢路径:全量重建
     el.innerHTML = '';
     getAllCategories().forEach(c => {
         const o = document.createElement('option');
@@ -1095,6 +1176,7 @@ function renderCategorySelect(sel) {
         o.selected = true;
         el.appendChild(o);
     }
+    _catSelectDirty = false;
 }
 function renderCategoryManager() {
     const list = document.getElementById('catList');
@@ -1108,7 +1190,8 @@ function renderCategoryManager() {
     customCategories.forEach((c, idx) => {
         const d = document.createElement('div');
         d.className = 'cat-item';
-        d.innerHTML = `<span>${escapeHtml(c.label)}</span><button class="cat-delete-btn" onclick="deleteCustomCategory(${idx})">✕</button>`;
+        d.innerHTML = `<span>${escapeHtml(c.label)}</span><button class="cat-delete-btn">✕</button>`;
+        d.querySelector('.cat-delete-btn').addEventListener('click', () => deleteCustomCategory(idx));
         list.appendChild(d);
     });
 }
@@ -1120,7 +1203,9 @@ function addCustomCategory() {
     if (getAllCategories().some(c => c.value === value || c.label === raw)) return showToast('⚠️ 该分类已存在');
     if (value.length > 15) return showToast('⚠️ 分类名称最多 15 字');
     customCategories.push({ label: raw, value });
-    saveCategories(); renderCategorySelect(); renderCategoryManager();
+    // 保留当前录入表单下拉框选中的分类(用户正在该界面上操作,不应被打断)
+    const curSel = document.getElementById('prodCategory').value || '其他';
+    saveCategories(); renderCategorySelect(curSel); renderCategoryManager();
     input.value = '';
     showToast(`✅ 已添加：${raw}`);
 }
@@ -1131,10 +1216,16 @@ function deleteCustomCategory(idx) {
         products.forEach(p => { if (p.category === c.value) p.category = '其他'; });
         customCategories.splice(idx, 1);
         saveCategories(); syncData();
-        renderCategorySelect(); renderCategoryManager();
+        // 若当前下拉选中的恰好是被删除的分类,要回退到"其他";否则保留
+        const curRaw = document.getElementById('prodCategory').value;
+        const curSel = (curRaw === c.value) ? '其他' : (curRaw || '其他');
+        renderCategorySelect(curSel); renderCategoryManager();
     });
 }
-function saveCategories() { safeLSSet(sk('foodCategories'), JSON.stringify(customCategories)); }
+function saveCategories() {
+    safeLSSet(sk('foodCategories'), JSON.stringify(customCategories));
+    markCategoryDirty();
+}
 
 // ================================================================
 // Toast & 确认弹窗
@@ -1176,12 +1267,13 @@ let isBatchMode = false, isAnalysisOpen = false, chartInstance = null, currentSo
 document.addEventListener('DOMContentLoaded', function() {
     initStores(); loadStoreData(); updateStoreHeader();
     initApiSettingsUI();
-    document.getElementById('warnDays').value    = config.warnDays;
-    document.getElementById('defProdDate').value = config.defProdDate;
-    document.getElementById('defLife').value     = config.defLife;
-    document.getElementById('defUnit').value     = config.defUnit;
-    renderCategorySelect(); renderCategoryManager(); renderBackupSlots();
+    syncConfigToSettingsInputs();
+    renderCategorySelect('其他'); renderCategoryManager(); renderBackupSlots();
     resetForm(); renderRecentList(); renderAllList(); updateWarnBanner();
+
+    // 事件委托:两个商品列表容器共用一个处理函数,避免每张卡片挂 3 个 onclick
+    document.getElementById('recentProductList').addEventListener('click', _onProductListClick);
+    document.getElementById('allProductList').addEventListener('click', _onProductListClick);
 
     document.addEventListener('click', e => {
         document.querySelectorAll('.suggestions-list').forEach(l => {
@@ -1198,8 +1290,12 @@ document.addEventListener('DOMContentLoaded', function() {
     window.addEventListener('resize', () => { if (chartInstance) chartInstance.resize(); });
     // 在移动端/Capacitor APK 里 beforeunload 基本不触发,改用 visibilitychange + pagehide
     // 保证用户切后台或杀进程前能落盘最后一次备份
+    // 【防御】若 10 秒内已经备份过,不再触发,避免挤掉刚刚落盘的新鲜快照
     const _flushBackup = () => {
-        if (products.length) { _lastBackupTs = 0; autoBackup(); }
+        if (!products.length) return;
+        if (Date.now() - _lastBackupTs < 10000) return;
+        _lastBackupTs = 0;
+        autoBackup();
     };
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'hidden') _flushBackup();
@@ -1269,14 +1365,14 @@ function saveProduct() {
     const life = parseInt(lifeRaw);
     if (isNaN(life) || life <= 0) return showToast('⚠️ 保质期时长须为正整数');
 
-    const isDup = products.some(p => p.name === name && p.date === date && String(p.id) !== editId);
+    const isDup = products.some(p => p.name === name && p.date === date && p.id !== editId);
     if (isDup) return showToast('⚠️ 库中已存在相同名称和生产日期的记录！');
 
     const expiry  = getExpiry(date, life, unit);
     const product = { id: editId || genId(), name, barcode, category, location, date, life, unit, expiry, qty };
 
     if (editId) {
-        const idx = products.findIndex(p => String(p.id) === editId);
+        const idx = products.findIndex(p => p.id === editId);
         if (idx !== -1) products[idx] = product;
     } else {
         products.push(product);
@@ -1304,7 +1400,7 @@ function _fillForm(p) {
 }
 
 function copyProduct(id) {
-    const p = products.find(i => String(i.id) === String(id));
+    const p = products.find(i => i.id === id);
     if (!p) return;
     document.getElementById('editId').value = '';
     _fillForm(p);
@@ -1317,7 +1413,7 @@ function copyProduct(id) {
 }
 
 function editProduct(id) {
-    const p = products.find(i => String(i.id) === String(id));
+    const p = products.find(i => i.id === id);
     if (!p) return;
     document.getElementById('editId').value = p.id;
     _fillForm(p);
@@ -1330,7 +1426,7 @@ function editProduct(id) {
 
 function deleteProduct(id) {
     showConfirmModal("删除产品", "确定要永久删除该记录吗？", () => {
-        products = products.filter(p => String(p.id) !== String(id));
+        products = products.filter(p => p.id !== id);
         syncData();
     });
 }
@@ -1386,7 +1482,7 @@ function batchDelete() {
         `⚠️ 即将永久删除 ${cnt} 条记录，此操作不可撤销！`,
         () => {
             const ids = new Set(Array.from(checked).map(cb => cb.dataset.id));
-            products = products.filter(p => !ids.has(String(p.id)));
+            products = products.filter(p => !ids.has(p.id));
             document.getElementById('selectAllCB').checked = false;
             syncData();
             showToast(`已删除 ${cnt} 条记录`);
@@ -1400,14 +1496,62 @@ function toggleAnalysis() {
     document.getElementById('btnAnalysis').style.backgroundColor = isAnalysisOpen ? '#e3f2fd' : 'white';
     if (isAnalysisOpen) updateChart();
 }
+// echarts 增量更新:
+// - 数据指纹(产品数+到期月分桶签名)没变就直接 return,避免 setOption 重排
+// - 数据变了只更新 series 和 xAxis.data,静态的 tooltip/grid/dataZoom 配置在首次 init 时一次性设置
+let _chartDataSig = null;
+let _chartInitialized = false;
+
 function updateChart() {
-    if (!chartInstance) chartInstance = echarts.init(document.getElementById('chartContainer'));
-    if (!products.length) { chartInstance.setOption({ title: { text:'暂无数据', left:'center', top:'center', textStyle:{color:'#999',fontSize:14} }, series:[] }, {notMerge:true}); return; }
+    if (!chartInstance) {
+        chartInstance = echarts.init(document.getElementById('chartContainer'));
+        _chartInitialized = false;
+        _chartDataSig = null;
+    }
+    if (!products.length) {
+        if (_chartDataSig !== 'empty') {
+            chartInstance.setOption({ title: { text:'暂无数据', left:'center', top:'center', textStyle:{color:'#999',fontSize:14} }, series:[] }, {notMerge:true});
+            _chartDataSig = 'empty';
+            _chartInitialized = false; // 下次有数据时重新走初始化路径
+        }
+        return;
+    }
+
+    // 统计到期月分布
     const mc = {}, curYM = getLocalDateStr().substring(0,7);
     products.forEach(p => { if (p.expiry) { const ym = p.expiry.substring(0,7); mc[ym] = (mc[ym]||0)+1; } });
-    const yms = Object.keys(mc).sort(), xd = [], sd = [];
-    yms.forEach(ym => { xd.push(ym); sd.push({ value: mc[ym], itemStyle: { color: ym < curYM ? '#c62828' : ym === curYM ? '#ef6c00' : '#4CAF50' } }); });
-    chartInstance.setOption({ title:{text:'按月过期时间分布',left:'center',textStyle:{fontSize:14}}, tooltip:{trigger:'axis',axisPointer:{type:'shadow'}}, dataZoom:[{type:'inside'},{type:'slider',bottom:5,height:15}], grid:{left:'10%',right:'5%',bottom:'25%',top:'15%'}, xAxis:{type:'category',data:xd,axisLabel:{rotate:45,interval:0}}, yAxis:{type:'value',minInterval:1}, series:[{name:'产品数量',data:sd,type:'bar',barMaxWidth:35,label:{show:true,position:'top'}}] }, {notMerge:true});
+    const yms = Object.keys(mc).sort();
+
+    // 数据指纹:按键值对拼接。键值都变化时才有变化,能识别"某月过期商品数 +1/-1"的真实变化
+    const sig = yms.map(ym => ym + ':' + mc[ym]).join('|');
+    if (sig === _chartDataSig && _chartInitialized) return;
+    _chartDataSig = sig;
+
+    const xd = [], sd = [];
+    yms.forEach(ym => {
+        xd.push(ym);
+        sd.push({ value: mc[ym], itemStyle: { color: ym < curYM ? '#c62828' : ym === curYM ? '#ef6c00' : '#4CAF50' } });
+    });
+
+    if (!_chartInitialized) {
+        // 首次:设置完整配置
+        chartInstance.setOption({
+            title:{text:'按月过期时间分布',left:'center',textStyle:{fontSize:14}},
+            tooltip:{trigger:'axis',axisPointer:{type:'shadow'}},
+            dataZoom:[{type:'inside'},{type:'slider',bottom:5,height:15}],
+            grid:{left:'10%',right:'5%',bottom:'25%',top:'15%'},
+            xAxis:{type:'category',data:xd,axisLabel:{rotate:45,interval:0}},
+            yAxis:{type:'value',minInterval:1},
+            series:[{name:'产品数量',data:sd,type:'bar',barMaxWidth:35,label:{show:true,position:'top'}}]
+        }, {notMerge:true});
+        _chartInitialized = true;
+    } else {
+        // 增量:只更新会变化的 xAxis.data 和 series.data,其他配置沿用
+        chartInstance.setOption({
+            xAxis:{data:xd},
+            series:[{data:sd}]
+        });
+    }
 }
 
 // ================================================================
@@ -1468,11 +1612,24 @@ function createProductCard(p, todayStr, warningThreshold, todayMs, catMap, showB
         ${p.barcode ? `<div class="barcode-display">🔢 ${escapeHtml(p.barcode)}</div>` : ''}
         <div class="item-expiry">${p.expiry ? '过期: ' + escapeHtml(p.expiry) : '<em style="color:#999">过期日待计算</em>'} ${countdownHtml}</div>
         <div class="item-btns" style="display:${enableBatch?'none':'flex'}">
-            <button class="btn btn-outline btn-sm" onclick="copyProduct('${safeId}')">📋 复制</button>
-            <button class="btn btn-outline btn-sm" onclick="editProduct('${safeId}')">📝 编辑</button>
-            <button class="btn btn-danger btn-sm" onclick="deleteProduct('${safeId}')">🗑️ 删除</button>
+            <button class="btn btn-outline btn-sm" data-action="copy" data-id="${safeId}">📋 复制</button>
+            <button class="btn btn-outline btn-sm" data-action="edit" data-id="${safeId}">📝 编辑</button>
+            <button class="btn btn-danger btn-sm" data-action="delete" data-id="${safeId}">🗑️ 删除</button>
         </div>`;
     return div;
+}
+
+// 商品卡片按钮事件委托:复制/编辑/删除统一走 data-action,避免每张卡片挂 3 个 onclick
+// 挂在两个列表容器上,而不是 document,可以减少无关冒泡触发
+function _onProductListClick(e) {
+    const btn = e.target.closest('button[data-action][data-id]');
+    if (!btn) return;
+    const id = btn.dataset.id;
+    switch (btn.dataset.action) {
+        case 'copy':   copyProduct(id); break;
+        case 'edit':   editProduct(id); break;
+        case 'delete': deleteProduct(id); break;
+    }
 }
 
 function renderRecentList() {
@@ -1485,15 +1642,18 @@ function renderRecentList() {
         String(b.id||'').localeCompare(String(a.id||''), undefined, {numeric: true})
     );
     const SHOW_MAX = 10;
+    // 【优化】用 DocumentFragment 一次性挂载,避免 N 次 appendChild 触发的重排
+    const frag = document.createDocumentFragment();
     // 最近录入卡片永远展示操作按钮,不受库存页批量模式影响(传 showBatchControls=false)
-    sorted.slice(0, SHOW_MAX).forEach(p => list.appendChild(createProductCard(p, ts, wt, tMs, catMap, false)));
+    sorted.slice(0, SHOW_MAX).forEach(p => frag.appendChild(createProductCard(p, ts, wt, tMs, catMap, false)));
     if (sorted.length > SHOW_MAX) {
         const link = document.createElement('div');
         link.style.cssText = 'text-align:center;padding:14px;color:var(--primary);font-size:14px;cursor:pointer;font-weight:600;';
         link.textContent = `查看全部 ${sorted.length} 件商品 →`;
         link.onclick = () => { document.getElementById('sortMode').value='recent'; switchTab('list'); };
-        list.appendChild(link);
+        frag.appendChild(link);
     }
+    list.appendChild(frag);
 }
 
 // ================================================================
@@ -1505,6 +1665,22 @@ let _renderedCount = 0;
 // 预构建的分类 label 映射表,renderAllList 里重置一次,renderNextPage 复用不重复构建
 let _catMapCache = null;
 
+// 【搜索性能优化】为每个 product 懒缓存归一化后的搜索文本。
+// - 首次搜索时计算并挂在对象的 _search 属性上(不入库,syncData 时会被 JSON 序列化成冗余字段,
+//   但 JSON.stringify 对前缀下划线字段照常写入,所以我们在保存前剥离一次)。
+// - 商品改名/改分类/改位置后 _search 会失效,saveProduct / Excel 导入 / JSON 导入时重新分配的
+//   对象本身就是新对象,没有 _search,下次搜索时自然会重算,无需显式清理。
+function getSearchText(p) {
+    if (p._search === undefined) {
+        p._search = (
+            (p.name || '') + '\u0001' +
+            (p.category || '') + '\u0001' +
+            (p.location || '')
+        ).toLowerCase();
+    }
+    return p._search;
+}
+
 function renderAllList() {
     const list = document.getElementById('allProductList');
     const mode = document.getElementById('sortMode').value;
@@ -1514,10 +1690,10 @@ function renderAllList() {
     _catMapCache = new Map(getAllCategories().map(c => [c.value, c.label]));
 
     // 1. 过滤逻辑：不同模式下严格分离待填写数据
+    //    使用 getSearchText(p) 缓存 name+category+location 的 lowercase 拼接,
+    //    相比每次 3 次 toLowerCase() + 3 次 includes(),热路径下显著降低 CPU 占用
     _filteredCache = products.filter(p => {
-        const matchKw = p.name.toLowerCase().includes(kw) ||
-                        (p.category && p.category.toLowerCase().includes(kw)) ||
-                        (p.location && p.location.toLowerCase().includes(kw));
+        const matchKw = !kw || getSearchText(p).includes(kw);
 
         if (mode === 'pending') {
             return matchKw && !p.date; // 待填模式：只看没日期的
@@ -1544,18 +1720,25 @@ function renderAllList() {
     }
 
     // 3. 排序逻辑
-    _filteredCache.sort((a,b) => {
-        let vA, vB;
-        if      (mode==='expiry') { vA=a.expiry||'9999-12-31'; vB=b.expiry||'9999-12-31'; }
-        else if (mode==='date')   { vA=a.date||'';   vB=b.date||''; }
-        else if (mode==='recent' || mode==='pending') {
-            // id 是字符串大数，必须用字符串比较(numeric 模式兼容新老 id 长度不一)
-            const cmp = String(b.id||'').localeCompare(String(a.id||''), undefined, {numeric: true});
-            return currentSortOrder==='asc' ? cmp : -cmp;
-        }
-        else if (mode==='life')   { vA=getLifeInDays(a.life,a.unit); vB=getLifeInDays(b.life,b.unit); return currentSortOrder==='asc' ? vA-vB : vB-vA; }
-        return currentSortOrder==='asc' ? (vA<vB?-1:vA>vB?1:0) : (vB<vA?-1:vB>vA?1:0);
-    });
+    if (mode === 'life') {
+        // 【优化】预先算好天数,避免 O(N log N) 次重复 getLifeInDays 调用
+        // 先 map 一次成 [{p, days}] 再排,排完再 map 回来
+        const withDays = _filteredCache.map(p => ({ p, days: getLifeInDays(p.life, p.unit) }));
+        withDays.sort((a, b) => currentSortOrder === 'asc' ? a.days - b.days : b.days - a.days);
+        _filteredCache = withDays.map(x => x.p);
+    } else {
+        _filteredCache.sort((a,b) => {
+            let vA, vB;
+            if      (mode==='expiry') { vA=a.expiry||'9999-12-31'; vB=b.expiry||'9999-12-31'; }
+            else if (mode==='date')   { vA=a.date||'';   vB=b.date||''; }
+            else if (mode==='recent' || mode==='pending') {
+                // id 是字符串大数，必须用字符串比较(numeric 模式兼容新老 id 长度不一)
+                const cmp = String(b.id||'').localeCompare(String(a.id||''), undefined, {numeric: true});
+                return currentSortOrder==='asc' ? cmp : -cmp;
+            }
+            return currentSortOrder==='asc' ? (vA<vB?-1:vA>vB?1:0) : (vB<vA?-1:vB>vA?1:0);
+        });
+    }
 
     renderNextPage();
     if (isAnalysisOpen) updateChart();
@@ -1571,9 +1754,12 @@ function renderNextPage() {
     const oldBtn = document.getElementById('loadMoreBtn');
     if (oldBtn) oldBtn.remove();
 
+    // 【优化】分页追加也用 DocumentFragment,PAGE_SIZE=30 条也能省下 30 次 reflow
+    const frag = document.createDocumentFragment();
     for (let i = _renderedCount; i < end; i++) {
-        list.appendChild(createProductCard(_filteredCache[i], ts, wt, tMs, catMap));
+        frag.appendChild(createProductCard(_filteredCache[i], ts, wt, tMs, catMap));
     }
+    list.appendChild(frag);
     _renderedCount = end;
 
     if (_renderedCount < _filteredCache.length) {
@@ -1595,8 +1781,15 @@ function toggleSortOrder() {
 // ================================================================
 // 数据同步
 // ================================================================
+// JSON.stringify 的 replacer:过滤掉临时字段(以 _ 开头的,如 _search)
+// 存盘时不落临时字段,备份/导出文件也会保持干净
+function _stripTempFields(key, value) {
+    if (typeof key === 'string' && key.startsWith('_')) return undefined;
+    return value;
+}
+
 function syncData(withBackup = true) {
-    const saved = safeLSSet(sk('foodProducts'), JSON.stringify(products));
+    const saved = safeLSSet(sk('foodProducts'), JSON.stringify(products, _stripTempFields));
     if (saved) {
         if (withBackup) { autoBackup(); updateStoreLastModified(); }
         renderRecentList(); renderAllList(); updateWarnBanner();
@@ -1610,12 +1803,22 @@ let pendingImportRows = [];
 
 function parseExcelDate(v) {
     if (v == null || v === '') return '';
-    if (typeof v === 'number') return getLocalDateStr(new Date(Math.round((v - 25569) * 86400 * 1000)));
-    const s = String(v).replace(/\//g, '-').trim();
-    const d = new Date(s);
-    // 解析失败时返回空字符串，避免"15-13-2024"这种脏数据混入库中
-    // 让后续的 valid 判断(!!date)能正确把这一行标记为无效
-    return !isNaN(d.getTime()) ? getLocalDateStr(d) : '';
+    // Excel 的数字日期序列号(从 1900-01-01 起)
+    if (typeof v === 'number') {
+        const d = new Date(Math.round((v - 25569) * 86400 * 1000));
+        return isNaN(d.getTime()) ? '' : getLocalDateStr(d);
+    }
+    const s = String(v).replace(/\//g, '-').replace(/\./g, '-').trim();
+    // 【严格校验】只接受 YYYY-M-D / YYYY-MM-DD 格式,避免 new Date('2024') 得到 2024-01-01、
+    // new Date('3') 在部分浏览器得到 2001-03-01 这类松散解析产生的假日期
+    const m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+    if (!m) return '';
+    const y = parseInt(m[1]), mo = parseInt(m[2]), dy = parseInt(m[3]);
+    if (mo < 1 || mo > 12 || dy < 1 || dy > 31) return '';
+    // 用 Date 回验一次,排除 2024-02-30 这种月日越界
+    const d = new Date(y, mo - 1, dy);
+    if (d.getFullYear() !== y || d.getMonth() !== mo - 1 || d.getDate() !== dy) return '';
+    return getLocalDateStr(d);
 }
 
 function triggerImport() { document.getElementById('fileInput').click(); }
@@ -1759,7 +1962,8 @@ function checkXLSX() {
 }
 
 function downloadJson(obj, filename) {
-    const blob = new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' });
+    // 用 _stripTempFields 剥离下划线前缀字段,导出文件保持干净(不含 _search 等运行期缓存)
+    const blob = new Blob([JSON.stringify(obj, _stripTempFields, 2)], { type: 'application/json' });
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
     a.href = url; a.download = filename;
@@ -1945,7 +2149,7 @@ function handleJsonImport(e) {
                     products = [...products, ...toAdd];
                     applyJsonImportConfig(data);
                     syncData();
-                    renderCategorySelect(); renderCategoryManager();
+                    renderCategorySelect('其他'); renderCategoryManager();
                     let msg = `✅ 合并完成：新增 ${toAdd.length} 条待填写`;
                     if (skipCount > 0) msg += `，已有待填写跳过 ${skipCount} 条`;
                     if (badCount  > 0) msg += `，过滤异常 ${badCount} 条`;
@@ -1957,7 +2161,7 @@ function handleJsonImport(e) {
                     products = [...datedProducts, ...validProducts];
                     applyJsonImportConfig(data);
                     syncData();
-                    renderCategorySelect(); renderCategoryManager();
+                    renderCategorySelect('其他'); renderCategoryManager();
                     let msg = `✅ 待填写区域已重置：${validProducts.length} 条`;
                     if (datedProducts.length > 0) msg += `，保留已填 ${datedProducts.length} 条`;
                     if (badCount > 0) msg += `，过滤异常 ${badCount} 条`;
@@ -1979,10 +2183,7 @@ function applyJsonImportConfig(data) {
     if (data.config) {
         config = { ...config, ...data.config };
         safeLSSet(sk('foodConfig'), JSON.stringify(config));
-        document.getElementById('warnDays').value    = config.warnDays;
-        document.getElementById('defProdDate').value = config.defProdDate;
-        document.getElementById('defLife').value     = config.defLife;
-        document.getElementById('defUnit').value     = config.defUnit;
+        syncConfigToSettingsInputs();
     }
     if (data.customCategories) { customCategories = data.customCategories; saveCategories(); }
 }
