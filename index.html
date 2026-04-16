@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>食品效期助手 V8.1</title>
+    <title>食品效期助手 V8.2</title>
     <script defer src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
     <style>
@@ -305,7 +305,7 @@
         </div>
         <div class="api-key-row" id="apiKeyRow">
             <input type="text" id="apiAppKey" placeholder="AppKey / Token" autocomplete="off">
-            <input type="text" id="apiAppSecret" placeholder="AppSecret（阿里云专用）" autocomplete="off" style="display:none;" id="apiAppSecret">
+            <input type="text" id="apiAppSecret" placeholder="AppSecret（阿里云专用）" autocomplete="off" style="display:none;">
             <input type="text" id="apiCustomUrl" placeholder="自定义接口 URL（含 {key} 和 {code} 占位符）" autocomplete="off" style="display:none;">
         </div>
         <div class="api-cors-tip" id="apiCorsTip"></div>
@@ -533,7 +533,7 @@
         </div>
 
         <div class="item-btns">
-            <button id="saveProdBtn" class="btn primary" onclick="saveProduct()">保存记录</button>
+            <button id="saveProdBtn" class="btn btn-primary" onclick="saveProduct()">保存记录</button>
             <button id="cancelBtn"   class="btn btn-outline" style="display:none;" onclick="cancelEdit()">取消</button>
         </div>
     </div>
@@ -586,7 +586,7 @@
 // ================================================================
 // 全局版本号
 // ================================================================
-const APP_VERSION = 'V8.1';
+const APP_VERSION = 'V8.2';
 
 // ================================================================
 // 全局常量
@@ -656,7 +656,9 @@ function genId() {
     let id = Date.now() * 1000 + Math.floor(Math.random() * 1000);
     if (id <= _lastId) id = _lastId + 1;
     _lastId = id;
-    return String(id); // 统一用字符串，避免大整数精度丢失
+    // 固定长度 17 位字符串，保证字典序比较结果与数值顺序一致
+    // （Date.now()*1000 当前约 16 位，padStart 后未来也稳定 17 位）
+    return String(id).padStart(17, '0');
 }
 
 // ================================================================
@@ -682,6 +684,9 @@ function safeLSSet(key, value) {
 // ================================================================
 let stores = [];
 let activeStoreId = null;
+// 非当前门店的统计数据缓存(count/pending/warn/expired)
+// 单独放一个 Map,避免之前版本直接挂在 store 对象上导致 foodStores JSON 累积脏字段
+const _storeStatsCache = new Map();
 
 function sk(base) { return `${base}_${activeStoreId}`; }
 function getActiveStore() { return stores.find(s => s.id === activeStoreId) || stores[0]; }
@@ -697,6 +702,18 @@ function initStores() {
             if (old) { safeLSSet(`${key}_${id}`, old); localStorage.removeItem(key); }
         });
     }
+    // V8.2 迁移:清理 V8.1 及以前遗留在 store 对象上的 _cachedXxx 统计缓存字段
+    let dirtyFound = false;
+    stores = stores.map(s => {
+        if (s._cachedCount != null || s._cachedPending != null ||
+            s._cachedWarn != null  || s._cachedExpired != null) {
+            dirtyFound = true;
+            return { id: s.id, name: s.name, createdAt: s.createdAt, lastModified: s.lastModified };
+        }
+        return s;
+    });
+    if (dirtyFound) safeLSSet('foodStores', JSON.stringify(stores));
+
     const saved = localStorage.getItem('foodActiveStore');
     activeStoreId = (saved && stores.find(s => s.id === saved)) ? saved : stores[0].id;
     safeLSSet('foodActiveStore', activeStoreId);
@@ -845,6 +862,7 @@ function refreshStoreCaches() {
     const todayStr = getLocalDateStr();
     stores.forEach(store => {
         if (store.id === activeStoreId) return; // 当前门店用内存数据
+        const stats = { count: 0, pending: 0, warn: 0, expired: 0 };
         try {
             const d = localStorage.getItem(`foodProducts_${store.id}`);
             const cfg = localStorage.getItem(`foodConfig_${store.id}`);
@@ -852,26 +870,18 @@ function refreshStoreCaches() {
             const threshold = getExpiry(todayStr, warnDays, 'days');
             if (d) {
                 const arr = JSON.parse(d);
-                store._cachedCount = 0;
-                store._cachedPending = 0;
-                store._cachedWarn = 0;
-                store._cachedExpired = 0;
-                
-                arr.forEach(p => { 
+                arr.forEach(p => {
                     if (!p.date) {
-                        store._cachedPending++;
+                        stats.pending++;
                     } else {
-                        store._cachedCount++;
-                        if (p.expiry && p.expiry < todayStr) store._cachedExpired++; 
-                        else if (p.expiry && p.expiry <= threshold) store._cachedWarn++; 
+                        stats.count++;
+                        if (p.expiry && p.expiry < todayStr) stats.expired++;
+                        else if (p.expiry && p.expiry <= threshold) stats.warn++;
                     }
                 });
-            } else {
-                store._cachedCount = 0; store._cachedPending = 0; store._cachedWarn = 0; store._cachedExpired = 0;
             }
-        } catch(e) {
-            store._cachedCount = 0; store._cachedPending = 0; store._cachedWarn = 0; store._cachedExpired = 0;
-        }
+        } catch(e) { /* 保持 stats 为 0 */ }
+        _storeStatsCache.set(store.id, stats);
     });
 }
 
@@ -895,10 +905,11 @@ function renderStoreList() {
                 }
             });
         } else {
-            count = store._cachedCount || 0;
-            pendingCount = store._cachedPending || 0;
-            warnCount = store._cachedWarn || 0;
-            expiredCount = store._cachedExpired || 0;
+            const stats = _storeStatsCache.get(store.id) || { count: 0, pending: 0, warn: 0, expired: 0 };
+            count        = stats.count;
+            pendingCount = stats.pending;
+            warnCount    = stats.warn;
+            expiredCount = stats.expired;
         }
         
         let metaHtml = `共 ${count} 件`;
@@ -938,12 +949,13 @@ function autoBackup() {
     _lastBackupTs = now;
     const snap = JSON.stringify({ products, config, customCategories, ts: now, storeId: activeStoreId });
     try {
+        // 按 3→2→1 顺序依次轮转,任何一步失败立即终止,避免备份链错位污染已有快照
         const b2 = localStorage.getItem(sk('foodBackup_2'));
+        if (b2 && !safeLSSet(sk('foodBackup_3'), b2)) { _lastBackupTs = 0; return; }
         const b1 = localStorage.getItem(sk('foodBackup_1'));
-        if (b2) safeLSSet(sk('foodBackup_3'), b2);
-        if (b1) safeLSSet(sk('foodBackup_2'), b1);
+        if (b1 && !safeLSSet(sk('foodBackup_2'), b1)) { _lastBackupTs = 0; return; }
         safeLSSet(sk('foodBackup_1'), snap);
-    } catch(e) {}
+    } catch(e) { console.warn('autoBackup 异常:', e); }
     renderBackupSlots();
 }
 
@@ -1038,6 +1050,8 @@ function updateWarnBanner() {
 
 function handleBannerClick() {
     switchTab('list');
+    // 清空搜索框,避免带着旧搜索词进入库存页后过滤干扰用户看不全待处理商品
+    document.getElementById('searchInput').value = '';
     const todayStr = getLocalDateStr();
     const hasExpired = products.some(p => p.expiry && p.expiry < todayStr);
     if (hasExpired) {
@@ -1072,6 +1086,15 @@ function renderCategorySelect(sel) {
         if (c.value === cur) o.selected = true;
         el.appendChild(o);
     });
+    // 未知分类回退：如果 cur 不在任何已知分类里(例如导入的其他门店自定义分类),
+    // 插入一个临时 option 并选中,防止编辑保存时分类被静默改成第一项(生鲜)
+    if (cur && !getAllCategories().some(c => c.value === cur)) {
+        const o = document.createElement('option');
+        o.value = cur;
+        o.textContent = `❓ ${cur}（未知分类）`;
+        o.selected = true;
+        el.appendChild(o);
+    }
 }
 function renderCategoryManager() {
     const list = document.getElementById('catList');
@@ -1173,9 +1196,15 @@ document.addEventListener('DOMContentLoaded', function() {
         _searchDebounce = setTimeout(renderAllList, 150);
     });
     window.addEventListener('resize', () => { if (chartInstance) chartInstance.resize(); });
-    window.addEventListener('beforeunload', () => {
+    // 在移动端/Capacitor APK 里 beforeunload 基本不触发,改用 visibilitychange + pagehide
+    // 保证用户切后台或杀进程前能落盘最后一次备份
+    const _flushBackup = () => {
         if (products.length) { _lastBackupTs = 0; autoBackup(); }
+    };
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') _flushBackup();
     });
+    window.addEventListener('pagehide', _flushBackup);
     setInterval(() => { if (products.length) autoBackup(); }, 5 * 60 * 1000);
 });
 
@@ -1384,7 +1413,7 @@ function updateChart() {
 // ================================================================
 // 商品卡片（含待填写状态区分）
 // ================================================================
-function createProductCard(p, todayStr, warningThreshold, todayMs, catMap) {
+function createProductCard(p, todayStr, warningThreshold, todayMs, catMap, showBatchControls = true) {
     let statusClass = 'ok';
     let badgeHtml = '<span class="status-badge" style="background:#e8f5e9;color:#2e7d32">安全</span>';
     const dateMs   = parseDateMs(p.date);
@@ -1416,13 +1445,16 @@ function createProductCard(p, todayStr, warningThreshold, todayMs, catMap) {
     const unitMap = { days:'天', months:'个月', years:'年' };
     const catLabel = (catMap && catMap.get(p.category)) || escapeHtml(p.category || '其他');
     const qty = p.qty || 1;
+    // 仅在允许批量控件的容器(库存列表)且当前处于批量模式时才显示 checkbox
+    const enableBatch = isBatchMode && showBatchControls;
+    const safeId = escapeHtml(String(p.id));
     const div = document.createElement('div');
     div.className = `item ${statusClass}`;
     div.style.setProperty('--progress', `${progress}%`);
     div.innerHTML = `
         <div class="item-header">
             <div class="item-title-wrapper">
-                <input type="checkbox" class="item-checkbox" data-id="${p.id}" style="display:${isBatchMode?'inline-block':'none'}" onchange="updateBatchDeleteBtn()">
+                <input type="checkbox" class="item-checkbox" data-id="${safeId}" style="display:${enableBatch?'inline-block':'none'}" onchange="updateBatchDeleteBtn()">
                 <div class="item-title">${escapeHtml(p.name)}</div>
             </div>
             ${badgeHtml}
@@ -1435,10 +1467,10 @@ function createProductCard(p, todayStr, warningThreshold, todayMs, catMap) {
         <div class="item-details">生产: ${p.date ? escapeHtml(p.date) : '<em style="color:#999">待填写</em>'} | 保质期: ${escapeHtml(String(p.life))}${escapeHtml(unitMap[p.unit]||'')}</div>
         ${p.barcode ? `<div class="barcode-display">🔢 ${escapeHtml(p.barcode)}</div>` : ''}
         <div class="item-expiry">${p.expiry ? '过期: ' + escapeHtml(p.expiry) : '<em style="color:#999">过期日待计算</em>'} ${countdownHtml}</div>
-        <div class="item-btns" style="display:${isBatchMode?'none':'flex'}">
-            <button class="btn btn-outline btn-sm" onclick="copyProduct(${p.id})">📋 复制</button>
-            <button class="btn btn-outline btn-sm" onclick="editProduct(${p.id})">📝 编辑</button>
-            <button class="btn btn-danger btn-sm" onclick="deleteProduct(${p.id})">🗑️ 删除</button>
+        <div class="item-btns" style="display:${enableBatch?'none':'flex'}">
+            <button class="btn btn-outline btn-sm" onclick="copyProduct('${safeId}')">📋 复制</button>
+            <button class="btn btn-outline btn-sm" onclick="editProduct('${safeId}')">📝 编辑</button>
+            <button class="btn btn-danger btn-sm" onclick="deleteProduct('${safeId}')">🗑️ 删除</button>
         </div>`;
     return div;
 }
@@ -1449,9 +1481,12 @@ function renderRecentList() {
     if (!products.length) { list.innerHTML = `<div style="text-align:center;color:#999;padding:20px;">还没有录入任何产品</div>`; return; }
     const ts = getLocalDateStr(), wt = getExpiry(ts, config.warnDays, 'days'), tMs = parseDateMs(ts);
     const catMap = new Map(getAllCategories().map(c => [c.value, c.label]));
-    const sorted = [...products].sort((a,b) => b.id - a.id);
+    const sorted = [...products].sort((a,b) =>
+        String(b.id||'').localeCompare(String(a.id||''), undefined, {numeric: true})
+    );
     const SHOW_MAX = 10;
-    sorted.slice(0, SHOW_MAX).forEach(p => list.appendChild(createProductCard(p, ts, wt, tMs, catMap)));
+    // 最近录入卡片永远展示操作按钮,不受库存页批量模式影响(传 showBatchControls=false)
+    sorted.slice(0, SHOW_MAX).forEach(p => list.appendChild(createProductCard(p, ts, wt, tMs, catMap, false)));
     if (sorted.length > SHOW_MAX) {
         const link = document.createElement('div');
         link.style.cssText = 'text-align:center;padding:14px;color:var(--primary);font-size:14px;cursor:pointer;font-weight:600;';
@@ -1465,8 +1500,10 @@ function renderRecentList() {
 // 库存列表（隔离显示、动态计数）
 // ================================================================
 const PAGE_SIZE = 30;
-let _filteredCache = [];  
-let _renderedCount = 0;   
+let _filteredCache = [];
+let _renderedCount = 0;
+// 预构建的分类 label 映射表,renderAllList 里重置一次,renderNextPage 复用不重复构建
+let _catMapCache = null;
 
 function renderAllList() {
     const list = document.getElementById('allProductList');
@@ -1474,6 +1511,7 @@ function renderAllList() {
     const kw   = document.getElementById('searchInput').value.trim().toLowerCase();
     list.innerHTML = '';
     _renderedCount = 0;
+    _catMapCache = new Map(getAllCategories().map(c => [c.value, c.label]));
 
     // 1. 过滤逻辑：不同模式下严格分离待填写数据
     _filteredCache = products.filter(p => {
@@ -1510,9 +1548,10 @@ function renderAllList() {
         let vA, vB;
         if      (mode==='expiry') { vA=a.expiry||'9999-12-31'; vB=b.expiry||'9999-12-31'; }
         else if (mode==='date')   { vA=a.date||'';   vB=b.date||''; }
-        else if (mode==='recent' || mode==='pending') { 
-            vA=a.id||0; vB=b.id||0; 
-            return currentSortOrder==='asc' ? vB-vA : vA-vB; 
+        else if (mode==='recent' || mode==='pending') {
+            // id 是字符串大数，必须用字符串比较(numeric 模式兼容新老 id 长度不一)
+            const cmp = String(b.id||'').localeCompare(String(a.id||''), undefined, {numeric: true});
+            return currentSortOrder==='asc' ? cmp : -cmp;
         }
         else if (mode==='life')   { vA=getLifeInDays(a.life,a.unit); vB=getLifeInDays(b.life,b.unit); return currentSortOrder==='asc' ? vA-vB : vB-vA; }
         return currentSortOrder==='asc' ? (vA<vB?-1:vA>vB?1:0) : (vB<vA?-1:vB>vA?1:0);
@@ -1526,7 +1565,8 @@ function renderNextPage() {
     const list = document.getElementById('allProductList');
     const ts  = getLocalDateStr(), wt = getExpiry(ts, config.warnDays, 'days'), tMs = parseDateMs(ts);
     const end = Math.min(_renderedCount + PAGE_SIZE, _filteredCache.length);
-    const catMap = new Map(getAllCategories().map(c => [c.value, c.label]));
+    // 复用 renderAllList 里预构建的分类映射表。防御性兜底:若缓存丢失则即时重建
+    const catMap = _catMapCache || new Map(getAllCategories().map(c => [c.value, c.label]));
 
     const oldBtn = document.getElementById('loadMoreBtn');
     if (oldBtn) oldBtn.remove();
@@ -1573,7 +1613,9 @@ function parseExcelDate(v) {
     if (typeof v === 'number') return getLocalDateStr(new Date(Math.round((v - 25569) * 86400 * 1000)));
     const s = String(v).replace(/\//g, '-').trim();
     const d = new Date(s);
-    return !isNaN(d.getTime()) ? getLocalDateStr(d) : s;
+    // 解析失败时返回空字符串，避免"15-13-2024"这种脏数据混入库中
+    // 让后续的 valid 判断(!!date)能正确把这一行标记为无效
+    return !isNaN(d.getTime()) ? getLocalDateStr(d) : '';
 }
 
 function triggerImport() { document.getElementById('fileInput').click(); }
