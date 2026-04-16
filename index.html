@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>食品效期助手 V7.6</title>
+    <title>食品效期助手 V8.1</title>
     <script defer src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
     <style>
@@ -214,6 +214,59 @@
         /* Toast */
         .toast { position: fixed; bottom: 90px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,.76); color: #fff; padding: 10px 22px; border-radius: 22px; font-size: 14px; z-index: 3000; opacity: 0; transition: opacity .3s; pointer-events: none; white-space: nowrap; max-width: 84vw; text-align: center; }
         .toast.show { opacity: 1; }
+
+        /* ── 条形码扫描器弹窗 ── */
+        .scanner-card { background: #0f0f1a; width: 94%; max-width: 380px; border-radius: 18px; overflow: hidden; box-shadow: 0 12px 40px rgba(0,0,0,.6); }
+        .scanner-hd { padding: 14px 16px; display: flex; justify-content: space-between; align-items: center; }
+        .scanner-hd span { color: #fff; font-size: 15px; font-weight: 600; }
+        .scanner-hd button { background: none; border: none; color: #888; font-size: 22px; cursor: pointer; padding: 0 2px; line-height: 1; }
+        .scanner-viewport { position: relative; width: 100%; background: #000; overflow: hidden; aspect-ratio: 1 / 1; }
+        #scannerVideo { width: 100%; height: 100%; object-fit: cover; display: block; }
+        .scanner-shade { position: absolute; inset: 0; display: grid; grid-template-rows: 1fr 36% 1fr; grid-template-columns: 1fr 72% 1fr; }
+        .scanner-shade > div { background: rgba(0,0,0,.52); }
+        .scanner-shade .hole { background: transparent; position: relative; }
+        .scanner-hole-border { position: absolute; inset: 0; border: 2px solid rgba(255,255,255,.55); border-radius: 6px; }
+        .scanner-hole-border::before, .scanner-hole-border::after { content: ''; position: absolute; width: 18px; height: 18px; border-color: #4CAF50; border-style: solid; border-radius: 3px; }
+        .scanner-hole-border::before { top: -2px; left: -2px; border-width: 3px 0 0 3px; }
+        .scanner-hole-border::after  { bottom: -2px; right: -2px; border-width: 0 3px 3px 0; }
+        .scanner-laser { position: absolute; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, transparent 5%, #4CAF50 40%, #80e080 50%, #4CAF50 60%, transparent 95%); animation: laserScan 1.8s ease-in-out infinite; box-shadow: 0 0 6px #4CAF50; }
+        @keyframes laserScan { 0%,100% { top: 8%; opacity: .9; } 50% { top: 88%; opacity: 1; } }
+        .scanner-tip { position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); color: rgba(255,255,255,.7); font-size: 12px; white-space: nowrap; background: rgba(0,0,0,.4); padding: 3px 10px; border-radius: 10px; }
+        .scanner-ft { padding: 12px 16px 14px; background: #16213e; min-height: 46px; display: flex; align-items: center; justify-content: center; }
+        .scanner-ft-text { color: #8899bb; font-size: 13px; text-align: center; }
+        .scanner-ft-text.scanning { color: #66aaff; }
+        .scanner-ft-text.success  { color: #4CAF50; font-weight: 600; }
+        .scanner-ft-text.error    { color: #ef5350; }
+
+        /* API 设置区 */
+        .api-platform-row { display: flex; gap: 6px; margin-bottom: 8px; align-items: center; }
+        .api-platform-row select { flex: 1; font-size: 13px; padding: 7px 8px; }
+        .api-key-row { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+        .api-key-row input { font-size: 13px; padding: 7px 10px; }
+        .api-status-badge { font-size: 11px; padding: 2px 8px; border-radius: 10px; background: #eee; color: #888; white-space: nowrap; }
+        .api-status-badge.ok { background: #e8f5e9; color: #2e7d32; }
+        .api-status-badge.warn { background: #fff3e0; color: #e65100; }
+        .api-cors-tip { font-size: 11px; color: #aaa; line-height: 1.5; margin-top: 4px; }
+
+        /* 产品条形码字段 */
+        .barcode-display { font-size: 11px; color: #aaa; font-family: monospace; margin-top: 2px; }
+
+        /* ── 内嵌扫码按钮（搜索框风格） ── */
+        .scan-input-wrapper { position: relative; }
+        .scan-input-wrapper input { padding-right: 50px; }
+        .scan-trigger-btn {
+            position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+            width: 36px; height: 36px;
+            background: var(--primary); color: #fff;
+            border: none; border-radius: 8px;
+            cursor: pointer; display: flex; align-items: center; justify-content: center;
+            transition: background .15s, transform .1s;
+        }
+        .scan-trigger-btn:active { background: var(--primary-dk); transform: translateY(-50%) scale(.93); }
+
+        /* 查询中 loading 动点 */
+        .lookup-dots::after { content: ''; animation: dots 1.2s infinite; }
+        @keyframes dots { 0%{content:'.'} 33%{content:'..'} 66%{content:'...'} }
     </style>
 </head>
 <body>
@@ -235,6 +288,28 @@
             </select>
         </div>
         <button class="btn btn-primary" onclick="saveSettings()">保存并应用设置</button>
+    </div>
+
+    <div class="menu-item" style="border-top:1px solid #eee;padding-top:18px;">
+        <label class="section-title">🔍 条码查询 API</label>
+        <label style="font-size:12px;color:#aaa;line-height:1.5;margin-bottom:8px;display:block;">扫码后自动查询商品名称。各平台均可免费注册获取 Key，推荐聚合数据（每日 50 次免费）。</label>
+        <div class="api-platform-row">
+            <select id="apiPlatform" onchange="onApiPlatformChange()">
+                <option value="none">⛔ 暂不使用</option>
+                <option value="juhe">聚合数据</option>
+                <option value="shujubao">数据宝</option>
+                <option value="alicloud">阿里云市场</option>
+                <option value="custom">自定义</option>
+            </select>
+            <span class="api-status-badge" id="apiStatusBadge">未配置</span>
+        </div>
+        <div class="api-key-row" id="apiKeyRow">
+            <input type="text" id="apiAppKey" placeholder="AppKey / Token" autocomplete="off">
+            <input type="text" id="apiAppSecret" placeholder="AppSecret（阿里云专用）" autocomplete="off" style="display:none;" id="apiAppSecret">
+            <input type="text" id="apiCustomUrl" placeholder="自定义接口 URL（含 {key} 和 {code} 占位符）" autocomplete="off" style="display:none;">
+        </div>
+        <div class="api-cors-tip" id="apiCorsTip"></div>
+        <button class="btn btn-primary" style="margin-top:4px;" onclick="saveApiSettings()">保存 API 设置</button>
     </div>
 
     <div class="menu-item" style="border-top:1px solid #eee;padding-top:18px;">
@@ -398,8 +473,33 @@
         <input type="hidden" id="editId">
 
         <div class="form-group autocomplete-wrapper">
-            <input type="text" id="prodName" placeholder="产品名称 (如: 鲜奶)" autocomplete="off">
+            <div class="scan-input-wrapper">
+                <input type="text" id="prodName" placeholder="产品名称 (如: 鲜奶)" autocomplete="off">
+                <button class="scan-trigger-btn" onclick="openScanner()" title="扫描条形码" type="button" aria-label="扫描条形码">
+                    <!-- 条形码竖线 -->
+                    <svg viewBox="0 0 22 22" width="22" height="22" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <!-- 四角扫描框 -->
+                        <path d="M1 6V2h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M21 6V2h-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M1 16v4h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M21 16v4h-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                        <!-- 条形码竖线 -->
+                        <line x1="5"    y1="7.5" x2="5"    y2="14.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+                        <line x1="7"    y1="7.5" x2="7"    y2="14.5" stroke="currentColor" stroke-width="2"   stroke-linecap="round"/>
+                        <line x1="9.5"  y1="7.5" x2="9.5"  y2="14.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+                        <line x1="11.5" y1="7.5" x2="11.5" y2="14.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                        <line x1="13.5" y1="7.5" x2="13.5" y2="14.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+                        <line x1="15.5" y1="7.5" x2="15.5" y2="14.5" stroke="currentColor" stroke-width="2"   stroke-linecap="round"/>
+                        <line x1="17"   y1="7.5" x2="17"   y2="14.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+                    </svg>
+                </button>
+            </div>
             <div id="prodNameSuggest" class="suggestions-list"></div>
+        </div>
+
+        <div class="form-group">
+            <label style="font-size:12px;color:#888;display:block;margin-bottom:4px;">条形码（可选，扫描自动填入）</label>
+            <input type="text" id="prodBarcode" placeholder="如: 6901028001136" autocomplete="off" inputmode="numeric" style="font-family:monospace;letter-spacing:1px;">
         </div>
 
         <div class="form-group duration-input">
@@ -486,7 +586,12 @@
 // ================================================================
 // 全局版本号
 // ================================================================
-const APP_VERSION = 'V7.6';
+const APP_VERSION = 'V8.1';
+
+// ================================================================
+// 全局常量
+// ================================================================
+const STORE_KEYS = ['foodProducts','foodConfig','foodCategories','foodBackup_1','foodBackup_2','foodBackup_3'];
 
 // ================================================================
 // 工具函数
@@ -538,6 +643,9 @@ function parseDateMs(s) {
 function diffDays(aStr, bStr) {
     return Math.round((parseDateMs(bStr) - parseDateMs(aStr)) / 86400000);
 }
+function _debounce(fn, ms) {
+    let t; return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
+}
 function escapeHtml(str) {
     return String(str == null ? '' : str)
         .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
@@ -548,7 +656,7 @@ function genId() {
     let id = Date.now() * 1000 + Math.floor(Math.random() * 1000);
     if (id <= _lastId) id = _lastId + 1;
     _lastId = id;
-    return id;
+    return String(id); // 统一用字符串，避免大整数精度丢失
 }
 
 // ================================================================
@@ -707,7 +815,7 @@ function deleteStore(storeId) {
     const store = stores.find(s => s.id === storeId);
     if (!store) return;
     showConfirmModal('⚠️ 删除门店', `确定删除「${store.name}」及其所有数据？此操作不可恢复！`, () => {
-        ['foodProducts','foodConfig','foodCategories','foodBackup_1','foodBackup_2','foodBackup_3'].forEach(key => {
+        STORE_KEYS.forEach(key => {
             localStorage.removeItem(`${key}_${storeId}`);
         });
         stores = stores.filter(s => s.id !== storeId);
@@ -870,7 +978,8 @@ function renderBackupSlots() {
 function restoreBackup(slot) {
     const raw = localStorage.getItem(sk(`foodBackup_${slot}`));
     if (!raw) return showToast('⚠️ 备份不存在');
-    const b = JSON.parse(raw);
+    let b;
+    try { b = JSON.parse(raw); } catch(e) { return showToast('❌ 备份文件已损坏，无法恢复', 3000); }
     showConfirmModal(
         `恢复备份 ${slot}`,
         `将恢复至 ${fmtDatetime(b.ts)} 的状态（${(b.products||[]).length} 条记录）。当前数据将被覆盖，是否继续？`,
@@ -929,8 +1038,11 @@ function updateWarnBanner() {
 
 function handleBannerClick() {
     switchTab('list');
-    const hasPending = products.some(p => !p.date);
-    if (hasPending) {
+    const todayStr = getLocalDateStr();
+    const hasExpired = products.some(p => p.expiry && p.expiry < todayStr);
+    if (hasExpired) {
+        document.getElementById('sortMode').value = 'expiry';
+    } else if (products.some(p => !p.date)) {
         document.getElementById('sortMode').value = 'pending';
     } else {
         document.getElementById('sortMode').value = 'expiry';
@@ -1040,6 +1152,7 @@ let isBatchMode = false, isAnalysisOpen = false, chartInstance = null, currentSo
 // ================================================================
 document.addEventListener('DOMContentLoaded', function() {
     initStores(); loadStoreData(); updateStoreHeader();
+    initApiSettingsUI();
     document.getElementById('warnDays').value    = config.warnDays;
     document.getElementById('defProdDate').value = config.defProdDate;
     document.getElementById('defLife').value     = config.defLife;
@@ -1100,6 +1213,7 @@ function handleFocus(el) { if (el.value === String(config.defLife) && config.def
 function resetForm() {
     document.getElementById('editId').value = '';
     document.getElementById('prodName').value = '';
+    document.getElementById('prodBarcode').value = '';
     renderCategorySelect('其他');
     document.getElementById('prodLocation').value = '常温';
     document.getElementById('prodDate').value = config.defProdDate || getLocalDateStr();
@@ -1117,29 +1231,30 @@ function saveProduct() {
     const lifeRaw  = document.getElementById('shelfLife').value;
     const unit     = document.getElementById('timeUnit').value;
     const editIdRaw= document.getElementById('editId').value;
+    const barcode  = (document.getElementById('prodBarcode').value || '').trim();
     const qtyRaw   = document.getElementById('prodQty').value;
     const qty      = qtyRaw ? Math.max(1, parseInt(qtyRaw) || 1) : 1;
-    const editIdNum= editIdRaw ? parseInt(editIdRaw) : null;
+    const editId   = editIdRaw || null;   // 字符串或 null
 
     if (!name || !lifeRaw || !date) return showToast('⚠️ 请填写完整信息！');
     const life = parseInt(lifeRaw);
     if (isNaN(life) || life <= 0) return showToast('⚠️ 保质期时长须为正整数');
 
-    const isDup = products.some(p => p.name === name && p.date === date && p.id !== editIdNum);
+    const isDup = products.some(p => p.name === name && p.date === date && String(p.id) !== editId);
     if (isDup) return showToast('⚠️ 库中已存在相同名称和生产日期的记录！');
 
     const expiry  = getExpiry(date, life, unit);
-    const product = { id: editIdNum || genId(), name, category, location, date, life, unit, expiry, qty };
+    const product = { id: editId || genId(), name, barcode, category, location, date, life, unit, expiry, qty };
 
-    if (editIdNum) {
-        const idx = products.findIndex(p => p.id === product.id);
+    if (editId) {
+        const idx = products.findIndex(p => String(p.id) === editId);
         if (idx !== -1) products[idx] = product;
     } else {
         products.push(product);
     }
     syncData();
     resetForm();
-    if (!editIdNum) {
+    if (!editId) {
         const btn = document.getElementById('saveProdBtn');
         const old = btn.textContent;
         btn.textContent = "✅ 保存成功！"; btn.style.backgroundColor = "#2E7D32";
@@ -1149,17 +1264,22 @@ function saveProduct() {
 }
 function cancelEdit() { resetForm(); switchTab('list'); }
 
-function copyProduct(id) {
-    const p = products.find(i => i.id === id);
-    if (!p) return;
-    document.getElementById('editId').value = '';
+function _fillForm(p) {
     document.getElementById('prodName').value = p.name;
+    document.getElementById('prodBarcode').value = p.barcode || '';
     renderCategorySelect(p.category || '其他');
     document.getElementById('prodLocation').value = p.location || '常温';
-    document.getElementById('prodDate').value = getLocalDateStr(); 
     document.getElementById('prodQty').value = p.qty || 1;
     document.getElementById('shelfLife').value = p.life;
     document.getElementById('timeUnit').value = p.unit;
+}
+
+function copyProduct(id) {
+    const p = products.find(i => String(i.id) === String(id));
+    if (!p) return;
+    document.getElementById('editId').value = '';
+    _fillForm(p);
+    document.getElementById('prodDate').value = getLocalDateStr();
     document.getElementById('formTitle').textContent = `📋 复制自「${p.name}」，请确认生产日期`;
     document.getElementById('cancelBtn').style.display = 'block';
     switchTab('add');
@@ -1168,16 +1288,11 @@ function copyProduct(id) {
 }
 
 function editProduct(id) {
-    const p = products.find(i => i.id === id);
+    const p = products.find(i => String(i.id) === String(id));
     if (!p) return;
     document.getElementById('editId').value = p.id;
-    document.getElementById('prodName').value = p.name;
-    renderCategorySelect(p.category || '其他');
-    document.getElementById('prodLocation').value = p.location || '常温';
+    _fillForm(p);
     document.getElementById('prodDate').value = p.date;
-    document.getElementById('prodQty').value = p.qty || 1;
-    document.getElementById('shelfLife').value = p.life;
-    document.getElementById('timeUnit').value = p.unit;
     document.getElementById('formTitle').textContent = "🔧 正在编辑记录";
     document.getElementById('cancelBtn').style.display = 'block';
     switchTab('add');
@@ -1186,7 +1301,7 @@ function editProduct(id) {
 
 function deleteProduct(id) {
     showConfirmModal("删除产品", "确定要永久删除该记录吗？", () => {
-        products = products.filter(p => p.id !== id);
+        products = products.filter(p => String(p.id) !== String(id));
         syncData();
     });
 }
@@ -1196,7 +1311,7 @@ function deleteProduct(id) {
 // ================================================================
 function setupAutocomplete(inputId, suggestId, onSel) {
     const inp = document.getElementById(inputId), lst = document.getElementById(suggestId);
-    inp.addEventListener('input', () => {
+    const _render = () => {
         const v = inp.value.trim().toLowerCase();
         lst.innerHTML = '';
         if (!v) { lst.style.display = 'none'; return; }
@@ -1209,7 +1324,8 @@ function setupAutocomplete(inputId, suggestId, onSel) {
             lst.appendChild(d);
         });
         lst.style.display = 'block';
-    });
+    };
+    inp.addEventListener('input', _debounce(_render, 150));
 }
 
 // ================================================================
@@ -1240,8 +1356,8 @@ function batchDelete() {
         '批量删除',
         `⚠️ 即将永久删除 ${cnt} 条记录，此操作不可撤销！`,
         () => {
-            const ids = Array.from(checked).map(cb => parseInt(cb.dataset.id));
-            products = products.filter(p => !ids.includes(p.id));
+            const ids = new Set(Array.from(checked).map(cb => cb.dataset.id));
+            products = products.filter(p => !ids.has(String(p.id)));
             document.getElementById('selectAllCB').checked = false;
             syncData();
             showToast(`已删除 ${cnt} 条记录`);
@@ -1268,7 +1384,7 @@ function updateChart() {
 // ================================================================
 // 商品卡片（含待填写状态区分）
 // ================================================================
-function createProductCard(p, todayStr, warningThreshold, todayMs) {
+function createProductCard(p, todayStr, warningThreshold, todayMs, catMap) {
     let statusClass = 'ok';
     let badgeHtml = '<span class="status-badge" style="background:#e8f5e9;color:#2e7d32">安全</span>';
     const dateMs   = parseDateMs(p.date);
@@ -1298,7 +1414,7 @@ function createProductCard(p, todayStr, warningThreshold, todayMs) {
     }
 
     const unitMap = { days:'天', months:'个月', years:'年' };
-    const catLabel = (getAllCategories().find(c => c.value === p.category)||{}).label || escapeHtml(p.category||'其他');
+    const catLabel = (catMap && catMap.get(p.category)) || escapeHtml(p.category || '其他');
     const qty = p.qty || 1;
     const div = document.createElement('div');
     div.className = `item ${statusClass}`;
@@ -1317,6 +1433,7 @@ function createProductCard(p, todayStr, warningThreshold, todayMs) {
             ${qty > 1 ? `<span class="tag qty-tag">📦 × ${qty}</span>` : ''}
         </div>
         <div class="item-details">生产: ${p.date ? escapeHtml(p.date) : '<em style="color:#999">待填写</em>'} | 保质期: ${escapeHtml(String(p.life))}${escapeHtml(unitMap[p.unit]||'')}</div>
+        ${p.barcode ? `<div class="barcode-display">🔢 ${escapeHtml(p.barcode)}</div>` : ''}
         <div class="item-expiry">${p.expiry ? '过期: ' + escapeHtml(p.expiry) : '<em style="color:#999">过期日待计算</em>'} ${countdownHtml}</div>
         <div class="item-btns" style="display:${isBatchMode?'none':'flex'}">
             <button class="btn btn-outline btn-sm" onclick="copyProduct(${p.id})">📋 复制</button>
@@ -1331,9 +1448,10 @@ function renderRecentList() {
     list.innerHTML = '';
     if (!products.length) { list.innerHTML = `<div style="text-align:center;color:#999;padding:20px;">还没有录入任何产品</div>`; return; }
     const ts = getLocalDateStr(), wt = getExpiry(ts, config.warnDays, 'days'), tMs = parseDateMs(ts);
+    const catMap = new Map(getAllCategories().map(c => [c.value, c.label]));
     const sorted = [...products].sort((a,b) => b.id - a.id);
     const SHOW_MAX = 10;
-    sorted.slice(0, SHOW_MAX).forEach(p => list.appendChild(createProductCard(p, ts, wt, tMs)));
+    sorted.slice(0, SHOW_MAX).forEach(p => list.appendChild(createProductCard(p, ts, wt, tMs, catMap)));
     if (sorted.length > SHOW_MAX) {
         const link = document.createElement('div');
         link.style.cssText = 'text-align:center;padding:14px;color:var(--primary);font-size:14px;cursor:pointer;font-weight:600;';
@@ -1408,12 +1526,13 @@ function renderNextPage() {
     const list = document.getElementById('allProductList');
     const ts  = getLocalDateStr(), wt = getExpiry(ts, config.warnDays, 'days'), tMs = parseDateMs(ts);
     const end = Math.min(_renderedCount + PAGE_SIZE, _filteredCache.length);
+    const catMap = new Map(getAllCategories().map(c => [c.value, c.label]));
 
     const oldBtn = document.getElementById('loadMoreBtn');
     if (oldBtn) oldBtn.remove();
 
     for (let i = _renderedCount; i < end; i++) {
-        list.appendChild(createProductCard(_filteredCache[i], ts, wt, tMs));
+        list.appendChild(createProductCard(_filteredCache[i], ts, wt, tMs, catMap));
     }
     _renderedCount = end;
 
@@ -1668,15 +1787,16 @@ function exportToExcel() {
         const now    = new Date();
         const nowStr = `${getLocalDateStr(now)} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
 
-        const dataSheet = [['产品名称','分类','存放位置','生产日期','保质期时长','保质期单位','过期日期','库存数量']];
+        const dataSheet = [['产品名称','条形码','分类','存放位置','生产日期','保质期时长','保质期单位','过期日期','库存数量']];
         products.forEach(p => {
             const u = p.unit === 'days' ? '天' : p.unit === 'months' ? '个月' : '年';
-            dataSheet.push([p.name, p.category||'其他', p.location||'常温', p.date||'', p.life, u, p.expiry, p.qty||1]);
+            dataSheet.push([p.name, p.barcode||'', p.category||'其他', p.location||'常温', p.date||'', p.life, u, p.expiry, p.qty||1]);
         });
 
         const noteSheet = [
             ['字段说明',''],
             ['产品名称',  '必填'],
+            ['条形码',    '可选，EAN-13 等条码号'],
             ['分类',      '如：饮品、零食，可自定义'],
             ['存放位置',  '常温 / 冷藏 / 冷冻'],
             ['生产日期',  '格式：YYYY-MM-DD，导入时必填'],
@@ -1882,6 +2002,330 @@ function clearAllData() {
         `确认清空 ${products.length} 条`
     );
 }
+
+// ================================================================
+// 条形码扫描模块  (V8.1 升级：国内 API + 条形码字段)
+// ================================================================
+
+/* ---------- API 配置 ---------- */
+// 支持平台：juhe(聚合数据) | shujubao(数据宝) | alicloud(阿里云市场) | custom(自定义) | none
+let _apiConfig = { platform: 'none', appKey: '', appSecret: '', customUrl: '' };
+
+const API_PLATFORM_INFO = {
+    none:      { name: '暂不使用',   tip: '扫码后仅填入条形码号，不查询商品名。', needSecret: false, needUrl: false },
+    juhe:      { name: '聚合数据',   tip: '注册地址：juhe.cn → 条形码查询（每日 50 次免费）', needSecret: false, needUrl: false },
+    shujubao:  { name: '数据宝',     tip: '注册地址：shujubaobei.com（每日 100 次免费）', needSecret: false, needUrl: false },
+    alicloud:  { name: '阿里云市场', tip: '在阿里云 API 市场购买/领取"商品条形码"服务，填入 AppCode（即 AppKey 框）即可。', needSecret: false, needUrl: false },
+    custom:    { name: '自定义',     tip: 'URL 中用 {key} 代表 AppKey，{code} 代表条码。接口需返回 JSON，工具自动匹配常见字段。', needSecret: false, needUrl: true  },
+};
+
+function loadApiConfig() {
+    try {
+        const s = localStorage.getItem('barcodeApiConfig');
+        if (s) _apiConfig = { ..._apiConfig, ...JSON.parse(s) };
+    } catch(e) {}
+}
+function saveApiSettings() {
+    _apiConfig.platform  = document.getElementById('apiPlatform').value;
+    _apiConfig.appKey    = document.getElementById('apiAppKey').value.trim();
+    _apiConfig.appSecret = document.getElementById('apiAppSecret').value.trim();
+    _apiConfig.customUrl = document.getElementById('apiCustomUrl').value.trim();
+    localStorage.setItem('barcodeApiConfig', JSON.stringify(_apiConfig));
+    updateApiStatusBadge();
+    showToast('✅ API 设置已保存');
+    toggleMenu();
+}
+function onApiPlatformChange() {
+    const p   = document.getElementById('apiPlatform').value;
+    const info = API_PLATFORM_INFO[p] || API_PLATFORM_INFO.none;
+    document.getElementById('apiAppSecret').style.display = info.needSecret ? '' : 'none';
+    document.getElementById('apiCustomUrl').style.display = info.needUrl    ? '' : 'none';
+    document.getElementById('apiKeyRow').style.display    = p === 'none'    ? 'none' : '';
+    document.getElementById('apiCorsTip').textContent     = info.tip;
+}
+function updateApiStatusBadge() {
+    const badge = document.getElementById('apiStatusBadge');
+    if (!badge) return;
+    const p = _apiConfig.platform;
+    if (p === 'none' || !_apiConfig.appKey) {
+        badge.className = 'api-status-badge warn';
+        badge.textContent = p === 'none' ? '未启用' : '缺少 Key';
+    } else {
+        badge.className = 'api-status-badge ok';
+        badge.textContent = (API_PLATFORM_INFO[p]||{}).name || p;
+    }
+}
+function initApiSettingsUI() {
+    loadApiConfig();
+    const sel = document.getElementById('apiPlatform');
+    if (sel) sel.value = _apiConfig.platform;
+    const keyEl = document.getElementById('apiAppKey');
+    if (keyEl) keyEl.value = _apiConfig.appKey;
+    const secEl = document.getElementById('apiAppSecret');
+    if (secEl) secEl.value = _apiConfig.appSecret;
+    const urlEl = document.getElementById('apiCustomUrl');
+    if (urlEl) urlEl.value = _apiConfig.customUrl;
+    onApiPlatformChange();
+    updateApiStatusBadge();
+}
+
+/* ---------- 状态变量 ---------- */
+let _scannerStream = null;
+let _zxingReader   = null;
+let _nativeTimer   = null;
+let _scannerOpen   = false;
+
+/* ---------- ZXing 懒加载 ---------- */
+let _zxingPromise = null;
+function _loadZXing() {
+    if (window.ZXing) return Promise.resolve();
+    if (_zxingPromise) return _zxingPromise;
+    _zxingPromise = new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = 'https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js';
+        s.onload  = resolve;
+        s.onerror = () => reject(new Error('ZXing CDN 加载失败，请检查网络'));
+        document.head.appendChild(s);
+    });
+    return _zxingPromise;
+}
+
+/* ---------- 打开扫描器 ---------- */
+async function openScanner() {
+    if (_scannerOpen) return;
+    _scannerOpen = true;
+    document.getElementById('scannerModal').classList.add('active');
+    _setScannerStatus('scanning', '正在启动摄像头…');
+
+    const constraints = { video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } } };
+    try {
+        _scannerStream = await navigator.mediaDevices.getUserMedia(constraints);
+    } catch(e) {
+        try { _scannerStream = await navigator.mediaDevices.getUserMedia({ video: true }); }
+        catch(e2) {
+            const msg = e2.name === 'NotAllowedError' ? '请允许访问摄像头权限后重试'
+                      : e2.name === 'NotFoundError'   ? '未检测到摄像头设备'
+                      : '摄像头启动失败：' + e2.message;
+            _setScannerStatus('error', '❌ ' + msg);
+            showToast('📷 ' + msg);
+            return;
+        }
+    }
+    const video = document.getElementById('scannerVideo');
+    video.srcObject = _scannerStream;
+    await video.play().catch(()=>{});
+
+    if (typeof BarcodeDetector !== 'undefined') {
+        _startNativeDetector(video);
+    } else {
+        _setScannerStatus('scanning', '加载扫描引擎…');
+        try { await _loadZXing(); _startZXingDetector(video); }
+        catch(e) { _setScannerStatus('error', '❌ ' + e.message); showToast(e.message); }
+    }
+}
+
+/* ---------- 原生 BarcodeDetector ---------- */
+function _startNativeDetector(video) {
+    _setScannerStatus('scanning', '扫描中…');
+    const detector = new BarcodeDetector({ formats: ['ean_13','ean_8','code_128','code_39','upc_a','upc_e','qr_code','data_matrix'] });
+    let lastTs = 0;
+    async function tick(ts) {
+        if (!_scannerOpen) return;
+        if (ts - lastTs > 350 && video.readyState >= 2) {
+            lastTs = ts;
+            try {
+                const results = await detector.detect(video);
+                if (results.length > 0) { _onCodeDetected(results[0].rawValue); return; }
+            } catch(e) {}
+        }
+        _nativeTimer = requestAnimationFrame(tick);
+    }
+    _nativeTimer = requestAnimationFrame(tick);
+}
+
+/* ---------- ZXing 降级 ---------- */
+function _startZXingDetector(video) {
+    const hints = new Map();
+    hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [
+        ZXing.BarcodeFormat.EAN_13, ZXing.BarcodeFormat.EAN_8,
+        ZXing.BarcodeFormat.CODE_128, ZXing.BarcodeFormat.CODE_39,
+        ZXing.BarcodeFormat.UPC_A,    ZXing.BarcodeFormat.UPC_E,
+        ZXing.BarcodeFormat.QR_CODE,
+    ]);
+    hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
+    _zxingReader = new ZXing.BrowserMultiFormatReader(hints, { delayBetweenScanAttempts: 400 });
+    _setScannerStatus('scanning', '扫描中…');
+    _zxingReader.decodeFromStream(_scannerStream, video, (result, err) => {
+        if (!_scannerOpen) return;
+        if (result) _onCodeDetected(result.getText());
+    });
+}
+
+/* ---------- 关闭扫描器 ---------- */
+function closeScanner() {
+    _scannerOpen = false;
+    if (_nativeTimer) { cancelAnimationFrame(_nativeTimer); _nativeTimer = null; }
+    if (_zxingReader) { try { _zxingReader.reset(); } catch(e){} _zxingReader = null; }
+    if (_scannerStream) { _scannerStream.getTracks().forEach(t => t.stop()); _scannerStream = null; }
+    const video = document.getElementById('scannerVideo');
+    if (video) video.srcObject = null;
+    document.getElementById('scannerModal').classList.remove('active');
+}
+
+/* ---------- 识别成功回调 ---------- */
+async function _onCodeDetected(code) {
+    if (!_scannerOpen) return;
+    closeScanner();
+    showToast('✅ 已扫描：' + code, 2000);
+
+    // 条形码字段直接填入
+    const barcodeInput = document.getElementById('prodBarcode');
+    if (barcodeInput) barcodeInput.value = code;
+
+    const nameInput = document.getElementById('prodName');
+    nameInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+    // 如果未配置 API，直接结束
+    if (_apiConfig.platform === 'none' || !_apiConfig.appKey) {
+        showToast('条码已填入，请手动输入商品名', 2500);
+        nameInput.focus();
+        return;
+    }
+
+    nameInput.placeholder = '查询商品名称…';
+    try {
+        const info = await _lookupBarcode(code);
+        if (info && info.name) {
+            nameInput.value = info.name;
+            showToast('📦 已填入：' + info.name);
+            nameInput.dispatchEvent(new Event('input', { bubbles: true }));
+        } else {
+            showToast('未查到商品名，请手动填写', 3000);
+        }
+    } catch(e) {
+        showToast('查询失败，请手动填写商品名', 3000);
+        console.warn('barcode lookup error:', e);
+    }
+    nameInput.placeholder = '产品名称 (如: 鲜奶)';
+    nameInput.focus();
+}
+
+/* ---------- 国内条码查询（纯国内接口，无需 VPN）----------ー
+   注意：浏览器直接调用第三方 API 受 CORS 限制。
+   在 Capacitor APP 环境中没有此限制，可正常使用。
+   浏览器端如遇 CORS 报错，属平台限制，需 APP 版本才能完整使用。
+---------------------------------------------------------------*/
+async function _lookupBarcode(code) {
+    const { platform, appKey, appSecret, customUrl } = _apiConfig;
+    let url = '', headers = {}, parseResult = null;
+
+    if (platform === 'juhe') {
+        // 聚合数据 条形码查询 API
+        // 文档: https://www.juhe.cn/docs/api/id/47
+        url = `https://www.juheapi.com/barcode/index?key=${encodeURIComponent(appKey)}&barcode=${encodeURIComponent(code)}`;
+        parseResult = data => {
+            if (data.error_code !== 0 || !data.result) return null;
+            const r = data.result;
+            const name = (r.goodsName || '').trim();
+            const brand = (r.brandName || '').trim();
+            if (!name) return null;
+            return { name: (brand && !name.startsWith(brand)) ? brand + ' ' + name : name };
+        };
+
+    } else if (platform === 'shujubao') {
+        // 数据宝 条形码查询 API
+        // 文档: https://www.shujubaobei.com
+        url = `https://api.shujubaobei.com/2.0/barcode?app_key=${encodeURIComponent(appKey)}&code=${encodeURIComponent(code)}`;
+        parseResult = data => {
+            if (!data || data.code !== 200) return null;
+            const r = data.data || {};
+            const name = (r.goodsName || r.goods_name || r.name || '').trim();
+            if (!name) return null;
+            return { name };
+        };
+
+    } else if (platform === 'alicloud') {
+        // 阿里云市场 商品条形码查询（APPCODE 鉴权方式）
+        // 多数阿里云市场商品条码服务使用此格式，具体路径以购买的服务文档为准
+        url = `https://barcode.market.alicloudapi.com/barcode?code=${encodeURIComponent(code)}`;
+        headers = { 'Authorization': `APPCODE ${appKey}` };
+        parseResult = data => {
+            // 阿里云市场各服务商返回格式不同，尝试常见字段
+            const r = data.result || data.data || data;
+            const name = (r.goodsName || r.goods_name || r.name || r.product_name || '').trim();
+            if (!name) return null;
+            return { name };
+        };
+
+    } else if (platform === 'custom') {
+        if (!customUrl) return null;
+        url = customUrl.replace('{key}', encodeURIComponent(appKey)).replace('{code}', encodeURIComponent(code));
+        parseResult = data => {
+            // 自动匹配常见商品名字段
+            const r = data.result || data.data || data;
+            const name = (r.goodsName || r.goods_name || r.name || r.product_name ||
+                          r.goodName  || r.good_name  || r.title || '').trim();
+            if (!name) return null;
+            return { name };
+        };
+    } else {
+        return null;
+    }
+
+    const ctrl  = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 7000);
+    try {
+        const r = await fetch(url, { signal: ctrl.signal, headers });
+        clearTimeout(timer);
+        if (!r.ok) return null;
+        const data = await r.json();
+        return parseResult(data);
+    } catch(e) {
+        clearTimeout(timer);
+        if (e.name === 'AbortError') return null;
+        // CORS 错误提示
+        if (e.message && e.message.includes('Failed to fetch')) {
+            showToast('⚠️ API 请求被浏览器拦截（CORS），APP 版本可正常使用', 4000);
+        }
+        return null;
+    }
+}
+
+/* ---------- 工具函数 ---------- */
+function _setScannerStatus(type, text) {
+    const el = document.getElementById('scannerStatus');
+    if (!el) return;
+    el.className = 'scanner-ft-text ' + type;
+    el.textContent = text;
+}
+
 </script>
+
+<!-- ── 条形码扫描弹窗 ── -->
+<div class="modal-overlay-ui" id="scannerModal">
+    <div class="scanner-card">
+        <div class="scanner-hd">
+            <span>📷 扫描条形码</span>
+            <button onclick="closeScanner()">✕</button>
+        </div>
+        <div class="scanner-viewport">
+            <video id="scannerVideo" autoplay playsinline muted></video>
+            <div class="scanner-shade">
+                <div></div><div></div><div></div>
+                <div></div>
+                <div class="hole">
+                    <div class="scanner-hole-border"></div>
+                    <div class="scanner-laser"></div>
+                </div>
+                <div></div>
+                <div></div><div></div><div></div>
+            </div>
+            <div class="scanner-tip">将条形码对准中间扫描框</div>
+        </div>
+        <div class="scanner-ft">
+            <div class="scanner-ft-text scanning" id="scannerStatus">正在启动摄像头…</div>
+        </div>
+    </div>
+</div>
 </body>
 </html>
