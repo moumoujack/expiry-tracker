@@ -247,6 +247,10 @@
         .api-status-badge.ok { background: #e8f5e9; color: #2e7d32; }
         .api-status-badge.warn { background: #fff3e0; color: #e65100; }
         .api-cors-tip { font-size: 11px; color: #aaa; line-height: 1.5; margin-top: 4px; }
+        .api-field-wrap { position: relative; margin-bottom: 6px; }
+        .api-field-wrap input { padding-right: 40px; }
+        .api-field-label { font-size: 11px; color: #999; margin-bottom: 3px; display: block; }
+        .api-eye-btn { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; font-size: 15px; color: #bbb; padding: 4px; line-height: 1; }
 
         /* 产品条形码字段 */
         .barcode-display { font-size: 11px; color: #aaa; font-family: monospace; margin-top: 2px; }
@@ -304,8 +308,16 @@
             <span class="api-status-badge" id="apiStatusBadge">未配置</span>
         </div>
         <div class="api-key-row" id="apiKeyRow">
-            <input type="text" id="apiAppKey" placeholder="AppKey / Token" autocomplete="off">
-            <input type="text" id="apiAppSecret" placeholder="AppSecret（阿里云专用）" autocomplete="off" style="display:none;">
+            <div class="api-field-wrap" id="apiKeyFieldWrap">
+                <label class="api-field-label" id="apiKeyLabel">AppKey / Token</label>
+                <input type="password" id="apiAppKey" placeholder="填写 AppKey / AppCode" autocomplete="off">
+                <button type="button" class="api-eye-btn" onclick="toggleApiFieldVis('apiAppKey',this)" title="显示/隐藏">👁</button>
+            </div>
+            <div class="api-field-wrap" id="apiSecretFieldWrap" style="display:none;">
+                <label class="api-field-label" id="apiSecretLabel">AppSecret / 密钥</label>
+                <input type="password" id="apiAppSecret" placeholder="填写 AppSecret" autocomplete="off">
+                <button type="button" class="api-eye-btn" onclick="toggleApiFieldVis('apiAppSecret',this)" title="显示/隐藏">👁</button>
+            </div>
             <input type="text" id="apiCustomUrl" placeholder="自定义接口 URL（含 {key} 和 {code} 占位符）" autocomplete="off" style="display:none;">
         </div>
         <div class="api-cors-tip" id="apiCorsTip"></div>
@@ -505,9 +517,9 @@
         <div class="form-group duration-input">
             <select id="prodCategory"></select>
             <select id="prodLocation">
-                <option value="常温">🏠 常温</option>
-                <option value="冷藏">❄️ 冷藏</option>
-                <option value="冷冻">🧊 冷冻</option>
+                <option value="常温"> 常温</option>
+                <option value="冷藏"> 冷藏</option>
+                <option value="冷冻"> 冷冻</option>
             </select>
         </div>
 
@@ -2258,14 +2270,23 @@ const API_PLATFORM_INFO = {
     none:      { name: '暂不使用',   tip: '扫码后仅填入条形码号，不查询商品名。', needSecret: false, needUrl: false },
     juhe:      { name: '聚合数据',   tip: '注册地址：juhe.cn → 条形码查询（每日 50 次免费）', needSecret: false, needUrl: false },
     shujubao:  { name: '数据宝',     tip: '注册地址：shujubaobei.com（每日 100 次免费）', needSecret: false, needUrl: false },
-    alicloud:  { name: '阿里云市场', tip: '在阿里云 API 市场购买/领取"商品条形码"服务，填入 AppCode（即 AppKey 框）即可。', needSecret: false, needUrl: false },
+    alicloud:  { name: '阿里云市场', tip: '填入 AppKey（身份 ID）和 AppSecret（密钥）。若购买的服务只提供 AppCode，则仅填 AppKey 框即可，AppSecret 留空。', needSecret: true, needUrl: false },
     custom:    { name: '自定义',     tip: 'URL 中用 {key} 代表 AppKey，{code} 代表条码。接口需返回 JSON，工具自动匹配常见字段。', needSecret: false, needUrl: true  },
 };
 
 function loadApiConfig() {
     try {
         const s = localStorage.getItem('barcodeApiConfig');
-        if (s) _apiConfig = { ..._apiConfig, ...JSON.parse(s) };
+        if (s) {
+            const parsed = JSON.parse(s);
+            // 解码 Base64 混淆存储的凭证
+            if (parsed._obf) {
+                try { parsed.appKey    = atob(parsed.appKey    || ''); } catch(e) { parsed.appKey    = ''; }
+                try { parsed.appSecret = atob(parsed.appSecret || ''); } catch(e) { parsed.appSecret = ''; }
+                delete parsed._obf;
+            }
+            _apiConfig = { ..._apiConfig, ...parsed };
+        }
     } catch(e) {}
 }
 function saveApiSettings() {
@@ -2273,18 +2294,36 @@ function saveApiSettings() {
     _apiConfig.appKey    = document.getElementById('apiAppKey').value.trim();
     _apiConfig.appSecret = document.getElementById('apiAppSecret').value.trim();
     _apiConfig.customUrl = document.getElementById('apiCustomUrl').value.trim();
-    localStorage.setItem('barcodeApiConfig', JSON.stringify(_apiConfig));
+    // Base64 混淆存储，防止直接在开发者工具/浏览器存储里看到明文凭证
+    localStorage.setItem('barcodeApiConfig', JSON.stringify({
+        platform:  _apiConfig.platform,
+        customUrl: _apiConfig.customUrl,
+        appKey:    btoa(_apiConfig.appKey),
+        appSecret: btoa(_apiConfig.appSecret),
+        _obf:      true
+    }));
     updateApiStatusBadge();
     showToast('✅ API 设置已保存');
     toggleMenu();
 }
 function onApiPlatformChange() {
-    const p   = document.getElementById('apiPlatform').value;
+    const p    = document.getElementById('apiPlatform').value;
     const info = API_PLATFORM_INFO[p] || API_PLATFORM_INFO.none;
-    document.getElementById('apiAppSecret').style.display = info.needSecret ? '' : 'none';
-    document.getElementById('apiCustomUrl').style.display = info.needUrl    ? '' : 'none';
-    document.getElementById('apiKeyRow').style.display    = p === 'none'    ? 'none' : '';
-    document.getElementById('apiCorsTip').textContent     = info.tip;
+    const secretWrap = document.getElementById('apiSecretFieldWrap');
+    if (secretWrap) secretWrap.style.display = info.needSecret ? '' : 'none';
+    document.getElementById('apiCustomUrl').style.display    = info.needUrl ? '' : 'none';
+    document.getElementById('apiKeyRow').style.display       = p === 'none' ? 'none' : '';
+    document.getElementById('apiCorsTip').textContent        = info.tip;
+    // 根据平台动态更新标签文字
+    const keyLabel    = document.getElementById('apiKeyLabel');
+    const secretLabel = document.getElementById('apiSecretLabel');
+    if (p === 'alicloud') {
+        if (keyLabel)    keyLabel.textContent    = 'AppKey（身份 ID）';
+        if (secretLabel) secretLabel.textContent = 'AppSecret（密钥）';
+    } else {
+        if (keyLabel)    keyLabel.textContent    = 'AppKey / Token';
+        if (secretLabel) secretLabel.textContent = 'AppSecret';
+    }
 }
 function updateApiStatusBadge() {
     const badge = document.getElementById('apiStatusBadge');
@@ -2297,6 +2336,12 @@ function updateApiStatusBadge() {
         badge.className = 'api-status-badge ok';
         badge.textContent = (API_PLATFORM_INFO[p]||{}).name || p;
     }
+}
+function toggleApiFieldVis(inputId, btn) {
+    const el = document.getElementById(inputId);
+    if (!el) return;
+    el.type = el.type === 'password' ? 'text' : 'password';
+    btn.textContent = el.type === 'password' ? '👁' : '🙈';
 }
 function initApiSettingsUI() {
     loadApiConfig();
@@ -2453,6 +2498,25 @@ async function _onCodeDetected(code) {
     nameInput.focus();
 }
 
+/* ---------- 阿里云 API 网关 HMAC-SHA256 签名（AppKey + AppSecret 模式）----------
+   当同时填写了 AppKey 和 AppSecret 时自动使用签名认证；
+   仅填 AppKey（即 AppCode）时退回到简单 APPCODE 认证（适用于云市场服务）。
+---------------------------------------------------------------------------*/
+async function _alicloudSign(method, path, queryStr, appKey, appSecret) {
+    const date   = new Date().toUTCString();
+    const accept = 'application/json';
+    const strToSign = [method.toUpperCase(), accept, '', '', date,
+                       path + (queryStr ? '?' + queryStr : '')].join('\n');
+    const enc = new TextEncoder();
+    const key = await crypto.subtle.importKey(
+        'raw', enc.encode(appSecret),
+        { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
+    );
+    const sig    = await crypto.subtle.sign('HMAC', key, enc.encode(strToSign));
+    const b64    = btoa(String.fromCharCode(...new Uint8Array(sig)));
+    return { 'Authorization': `acs ${appKey}:${b64}`, 'Date': date, 'Accept': accept };
+}
+
 /* ---------- 国内条码查询（纯国内接口，无需 VPN）----------ー
    注意：浏览器直接调用第三方 API 受 CORS 限制。
    在 Capacitor APP 环境中没有此限制，可正常使用。
@@ -2488,10 +2552,21 @@ async function _lookupBarcode(code) {
         };
 
     } else if (platform === 'alicloud') {
-        // 阿里云市场 商品条形码查询（APPCODE 鉴权方式）
+        // 阿里云市场 商品条形码查询
         // 多数阿里云市场商品条码服务使用此格式，具体路径以购买的服务文档为准
-        url = `https://barcode.market.alicloudapi.com/barcode?code=${encodeURIComponent(code)}`;
-        headers = { 'Authorization': `APPCODE ${appKey}` };
+        const queryStr = `code=${encodeURIComponent(code)}`;
+        url = `https://barcode.market.alicloudapi.com/barcode?${queryStr}`;
+        if (appSecret) {
+            // AppKey + AppSecret → HMAC-SHA256 签名认证（阿里云 API 网关）
+            try {
+                headers = await _alicloudSign('GET', '/barcode', queryStr, appKey, appSecret);
+            } catch(e) {
+                headers = { 'Authorization': `APPCODE ${appKey}` };
+            }
+        } else {
+            // 仅 AppKey/AppCode → 简单 APPCODE 认证（阿里云市场）
+            headers = { 'Authorization': `APPCODE ${appKey}` };
+        }
         parseResult = data => {
             // 阿里云市场各服务商返回格式不同，尝试常见字段
             const r = data.result || data.data || data;
