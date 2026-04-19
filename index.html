@@ -631,6 +631,22 @@
             font-size: 15px; color: #555; font-weight: 600; cursor: pointer;
         }
         .sort-sheet-cancel:active { background: #e8e8e8; }
+        .sort-sheet-order-row {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 12px 24px; border-top: 1px solid #f0f0f0;
+        }
+        [data-theme="dark"] .sort-sheet-order-row { border-color: var(--border); }
+        .sort-sheet-order-label { font-size: 15px; color: var(--txt); font-weight: 500; }
+        .sort-sheet-order-btns { display: flex; gap: 8px; }
+        .sort-order-btn {
+            padding: 7px 18px; border-radius: 20px; font-size: 14px; font-weight: 600;
+            border: 1.5px solid var(--border); background: none;
+            color: var(--sub); cursor: pointer; transition: all .15s;
+        }
+        .sort-order-btn.active {
+            background: var(--primary); color: #fff; border-color: var(--primary);
+        }
+        .sort-order-btn:active { opacity: .8; }
 
         /* ══ SPA 屏幕导航系统 ══ */
         .screen {
@@ -3292,12 +3308,24 @@ function toggleSortOrder() {
 const _sortLabelMap = { expiry:'临期', date:'生产日期', recent:'最近录入', life:'保质时长' };
 
 function openSortSheet() {
+    // 同步升降序按钮状态
+    document.getElementById('orderBtnAsc').classList.toggle('active',  currentSortOrder === 'asc');
+    document.getElementById('orderBtnDesc').classList.toggle('active', currentSortOrder === 'desc');
     document.getElementById('sortSheetOverlay').classList.add('active');
     document.getElementById('sortSheet').classList.add('active');
 }
 function closeSortSheet() {
     document.getElementById('sortSheetOverlay').classList.remove('active');
     document.getElementById('sortSheet').classList.remove('active');
+}
+function setSortOrder(order) {
+    currentSortOrder = order;
+    document.getElementById('orderBtnAsc').classList.toggle('active',  order === 'asc');
+    document.getElementById('orderBtnDesc').classList.toggle('active', order === 'desc');
+    // 同步顶部芯片箭头
+    const arrowEl = document.getElementById('sortArrow');
+    if (arrowEl) arrowEl.textContent = order === 'asc' ? '↑' : '↓';
+    renderAllList();
 }
 function selectSortMode(val) {
     document.getElementById('sortMode').value = val;
@@ -4516,12 +4544,19 @@ function _setScannerStatus(type, text) {
 <div class="sort-sheet-overlay" id="sortSheetOverlay" onclick="closeSortSheet()"></div>
 <div class="sort-sheet" id="sortSheet">
     <div class="sort-sheet-handle"></div>
-    <div class="sort-sheet-title">选择排序方式</div>
+    <div class="sort-sheet-title">排序方式</div>
     <button class="sort-sheet-item" data-sort-val="expiry" onclick="selectSortMode('expiry')">⏳ 临期优先 <span class="sort-sheet-check visible" id="ss-expiry">✓</span></button>
     <button class="sort-sheet-item" data-sort-val="date"   onclick="selectSortMode('date')">🆕 生产日期 <span class="sort-sheet-check" id="ss-date">✓</span></button>
     <button class="sort-sheet-item" data-sort-val="recent" onclick="selectSortMode('recent')">🕒 最近录入 <span class="sort-sheet-check" id="ss-recent">✓</span></button>
     <button class="sort-sheet-item" data-sort-val="life"   onclick="selectSortMode('life')">⏱️ 保质时长 <span class="sort-sheet-check" id="ss-life">✓</span></button>
-    <button class="sort-sheet-cancel" onclick="closeSortSheet()">取消</button>
+    <div class="sort-sheet-order-row">
+        <span class="sort-sheet-order-label">排列顺序</span>
+        <div class="sort-sheet-order-btns">
+            <button id="orderBtnAsc"  class="sort-order-btn active" onclick="setSortOrder('asc')">↑ 升序</button>
+            <button id="orderBtnDesc" class="sort-order-btn"        onclick="setSortOrder('desc')">↓ 降序</button>
+        </div>
+    </div>
+    <button class="sort-sheet-cancel" onclick="closeSortSheet()">完成</button>
 </div>
 
 </body>
