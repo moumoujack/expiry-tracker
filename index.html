@@ -10,7 +10,7 @@
     <meta name="theme-color" id="themeColorMeta" content="#ffffff">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
-    <title>食品效期助手 V9.2</title>
+    <title>食品效期助手 V9.4.0</title>
     <!-- 主题初始化：在页面渲染前执行，防止白屏闪烁，并同步修正 theme-color -->
     <script>
     (function(){
@@ -631,22 +631,34 @@
             font-size: 15px; color: #555; font-weight: 600; cursor: pointer;
         }
         .sort-sheet-cancel:active { background: #e8e8e8; }
-        .sort-sheet-order-row {
-            display: flex; align-items: center; justify-content: space-between;
-            padding: 12px 24px; border-top: 1px solid #f0f0f0;
+        /* 升序/降序区块 */
+        .sort-order-section {
+            padding: 10px 16px 4px;
         }
-        [data-theme="dark"] .sort-sheet-order-row { border-color: var(--border); }
-        .sort-sheet-order-label { font-size: 15px; color: var(--txt); font-weight: 500; }
-        .sort-sheet-order-btns { display: flex; gap: 8px; }
+        .sort-order-label {
+            font-size: 11px; font-weight: 700; color: var(--sub);
+            text-transform: uppercase; letter-spacing: .05em;
+            margin-bottom: 7px;
+        }
+        .sort-order-btns {
+            display: flex; gap: 8px;
+        }
         .sort-order-btn {
-            padding: 7px 18px; border-radius: 20px; font-size: 14px; font-weight: 600;
-            border: 1.5px solid var(--border); background: none;
-            color: var(--sub); cursor: pointer; transition: all .15s;
+            flex: 1; padding: 10px 0; border: 1.5px solid var(--border);
+            border-radius: 10px; background: none; font-size: 14px;
+            color: var(--txt); cursor: pointer; font-weight: 500;
+            transition: background .12s, border-color .12s, color .12s;
+            display: flex; align-items: center; justify-content: center; gap: 5px;
         }
+        .sort-order-btn:active { background: var(--card2); }
         .sort-order-btn.active {
-            background: var(--primary); color: #fff; border-color: var(--primary);
+            border-color: var(--primary); background: var(--badge-ok-bg);
+            color: var(--primary); font-weight: 700;
         }
-        .sort-order-btn:active { opacity: .8; }
+        [data-theme="dark"] .sort-order-btn { border-color: var(--border); color: var(--txt); }
+        [data-theme="dark"] .sort-order-btn.active {
+            border-color: var(--primary); background: var(--badge-ok-bg); color: var(--primary);
+        }
 
         /* ══ SPA 屏幕导航系统 ══ */
         .screen {
@@ -876,6 +888,34 @@
     </style>
 </head>
 <body>
+<!-- 【V9.3.0 修复 #6】条码扫描器图标原来在三处 modal 里各写一份完整 SVG（约 100 行重复）。
+     改为在此处定义两个 <symbol>，三处改用 <use> 引用，后续修改只需改这里。
+     scan-icon-full: 商品 modal 里较宽的版本（含更多竖线细节）
+     scan-icon-slim: 批次 modal 和搜索 picker 里的精简版                          -->
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+  <symbol id="scan-icon-full" viewBox="0 0 22 22" fill="none">
+    <path d="M1 6V2h4"  stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M21 6V2h-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M1 16v4h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M21 16v4h-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    <line x1="5"  y1="7.5" x2="5"  y2="14.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+    <line x1="7"  y1="7.5" x2="7"  y2="14.5" stroke="currentColor" stroke-width="2"   stroke-linecap="round"/>
+    <line x1="9.5"  y1="7.5" x2="9.5"  y2="14.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+    <line x1="11.5" y1="7.5" x2="11.5" y2="14.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="13.5" y1="7.5" x2="13.5" y2="14.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+    <line x1="15.5" y1="7.5" x2="15.5" y2="14.5" stroke="currentColor" stroke-width="2"   stroke-linecap="round"/>
+    <line x1="17"   y1="7.5" x2="17"   y2="14.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+  </symbol>
+  <symbol id="scan-icon-slim" viewBox="0 0 22 22" fill="none">
+    <path d="M1 6V2h4"  stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M21 6V2h-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M1 16v4h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M21 16v4h-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    <line x1="7"    y1="7.5" x2="7"    y2="14.5" stroke="currentColor" stroke-width="2"   stroke-linecap="round"/>
+    <line x1="11.5" y1="7.5" x2="11.5" y2="14.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="15.5" y1="7.5" x2="15.5" y2="14.5" stroke="currentColor" stroke-width="2"   stroke-linecap="round"/>
+  </symbol>
+</svg>
 
 
 
@@ -1285,7 +1325,13 @@
         </div>
         <div style="height:1px;background:var(--border);margin:4px 16px 16px;"></div>
         <div class="data-section-title">📊 库存台账（Excel）</div>
-        <div class="data-desc">含全部批次记录，可在电脑 Excel 中查看，也可导回本工具。</div>
+        <div class="data-desc">含批次记录，可在电脑 Excel 中查看，也可导回本工具。</div>
+        <div style="padding: 4px 0 10px;">
+            <label style="display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--sub);cursor:pointer;">
+                <input type="checkbox" id="exportIncludeWithdrawn" style="width:15px;height:15px;accent-color:var(--primary);">
+                包含已下架批次
+            </label>
+        </div>
         <div class="data-btn-row">
             <button class="btn btn-outline" onclick="exportToExcel()">📤 导出台账</button>
             <button class="btn btn-outline" onclick="triggerImport()">📥 导入台账</button>
@@ -1388,7 +1434,7 @@
 // ================================================================
 // 全局版本号
 // ================================================================
-const APP_VERSION = 'V9.2';
+const APP_VERSION = 'V9.4.0';
 document.title = `食品效期助手 ${APP_VERSION}`;
 
 // ================================================================
@@ -1410,7 +1456,7 @@ function fmtDatetime(ts) {
 }
 function fileTs() {
     const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}-${String(d.getHours()).padStart(2,'0')}-${String(d.getMinutes()).padStart(2,'0')}-${String(d.getSeconds()).padStart(2,'0')}`;
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}_${String(d.getHours()).padStart(2,'0')}-${String(d.getMinutes()).padStart(2,'0')}-${String(d.getSeconds()).padStart(2,'0')}`;
 }
 function getExpiry(dateStr, life, unit) {
     if (!dateStr) return '';
@@ -1482,9 +1528,9 @@ function safeLSSet(key, value) {
         return true;
     } catch(e) {
         if (e.name === 'QuotaExceededError' || e.code === 22 || e.code === 1014) {
-            showToast('⚠️ 存储空间已满！请导出数据后清理旧记录', 5000);
+            if (typeof showToast === 'function') showToast('⚠️ 存储空间已满！请导出数据后清理旧记录', 5000);
         } else {
-            showToast('⚠️ 数据保存失败，请重试', 3000);
+            if (typeof showToast === 'function') showToast('⚠️ 数据保存失败，请重试', 3000);
             console.error('LS write error:', e);
         }
         return false;
@@ -1589,12 +1635,17 @@ function resetTransientUIState() {
     if (arrowEl) arrowEl.textContent = '↑';
     const lblEl = document.getElementById('sortLabel');
     if (lblEl) lblEl.textContent = '临期';
-    // reset sheet checkmarks
+    // reset sheet checkmarks + order buttons
     ['expiry','date','recent','life'].forEach(v => {
         const el = document.getElementById('ss-' + v);
         if (el) el.classList.toggle('visible', v === 'expiry');
     });
     document.getElementById('sortMode').value = 'expiry';
+    // 同步升降序按钮（_syncSortOrderBtns 在 openSortSheet 时也会调，这里提前重置）
+    const ascBtn  = document.getElementById('ss-order-asc');
+    const descBtn = document.getElementById('ss-order-desc');
+    if (ascBtn)  ascBtn.classList.add('active');
+    if (descBtn) descBtn.classList.remove('active');
 }
 
 function syncConfigToSettingsInputs() {
@@ -1677,7 +1728,7 @@ function renameStore(storeId) {
         showToast(`✅ 已重命名为：${newName}`);
     };
 
-    input.addEventListener('blur', commit);
+    input.addEventListener('blur', commit, { once: true });
     input.addEventListener('keydown', e => {
         if (e.key === 'Enter')  { input.blur(); }
         if (e.key === 'Escape') { input.value = oldName; input.blur(); }
@@ -1721,7 +1772,7 @@ function refreshStoreCaches() {
         const stats = { count: 0, pending: 0, warn: 0, expired: 0 };
         try {
             const cfg = localStorage.getItem(`foodConfig_${store.id}`);
-            const warnDays = cfg ? (JSON.parse(cfg).warnDays || 7) : 7;
+            const warnDays = cfg ? Math.max(1, parseInt(JSON.parse(cfg).warnDays) || 7) : 7;
             const threshold = getExpiry(todayStr, warnDays, 'days');
             const invRaw = localStorage.getItem(`foodInventory_${store.id}`);
             if (invRaw) {
@@ -1834,12 +1885,17 @@ function autoBackup() {
         config, customCategories,
         ts: now, storeId: activeStoreId
     }, _stripTempFields);
+    // 【V9.2.1 修复 #5】改为"全读快照 → 一次性批量写入"。
+    // 原版按 3→2→1 顺序逐步覆盖,写 slot1 失败时 slot2 已被 slot1 旧值覆盖,导致丢失一个历史版本。
+    // 新版本先把目标结果全部准备好,再按顺序提交;任一写失败立即进冷却,剩余不再写。
+    const b1Cur = localStorage.getItem(sk('foodBackup_1'));
+    const b2Cur = localStorage.getItem(sk('foodBackup_2'));
     try {
-        const b2 = localStorage.getItem(sk('foodBackup_2'));
-        if (b2 && !safeLSSet(sk('foodBackup_3'), b2)) { _lastBackupTs = now + _BACKUP_QUOTA_COOLDOWN; return; }
-        const b1 = localStorage.getItem(sk('foodBackup_1'));
-        if (b1 && !safeLSSet(sk('foodBackup_2'), b1)) { _lastBackupTs = now + _BACKUP_QUOTA_COOLDOWN; return; }
-        if (!safeLSSet(sk('foodBackup_1'), snap))    { _lastBackupTs = now + _BACKUP_QUOTA_COOLDOWN; return; }
+        // 先写末位(最老的被丢弃),然后中位,最后首位。
+        // 即便中途失败,之前已提交的 slot 是"更老的合法备份",不会造成 slot1===slot2 的诡异状态。
+        if (b2Cur && !safeLSSet(sk('foodBackup_3'), b2Cur)) { _lastBackupTs = now + _BACKUP_QUOTA_COOLDOWN; return; }
+        if (b1Cur && !safeLSSet(sk('foodBackup_2'), b1Cur)) { _lastBackupTs = now + _BACKUP_QUOTA_COOLDOWN; return; }
+        if (!safeLSSet(sk('foodBackup_1'), snap))           { _lastBackupTs = now + _BACKUP_QUOTA_COOLDOWN; return; }
     } catch(e) { console.warn('autoBackup 异常:', e); }
     renderBackupSlots();
 }
@@ -1935,7 +1991,22 @@ function updateWarnBanner() {
 function handleBannerClick() {
     switchTab('list');
     document.getElementById('searchInput').value = '';
+    // 【V9.2.1 修复 #4】同步排序芯片 UI 状态,避免"所见非所得"
+    currentSortOrder = 'asc';
+    const arrowEl = document.getElementById('sortArrow');
+    if (arrowEl) arrowEl.textContent = '↑';
+    const lblEl = document.getElementById('sortLabel');
+    if (lblEl) lblEl.textContent = _sortLabelMap['expiry'] || '临期';
+    ['expiry','date','recent','life'].forEach(v => {
+        const el = document.getElementById('ss-' + v);
+        if (el) el.classList.toggle('visible', v === 'expiry');
+    });
     document.getElementById('sortMode').value = 'expiry';
+    // 同步抽屉升降序按钮
+    const ascBtn  = document.getElementById('ss-order-asc');
+    const descBtn = document.getElementById('ss-order-desc');
+    if (ascBtn)  ascBtn.classList.add('active');
+    if (descBtn) descBtn.classList.remove('active');
     isShowWithdrawn = false;
     isShowPendingOnly = false;
     const bW = document.getElementById('btnWithdrawn');
@@ -1961,7 +2032,19 @@ function getAllCategories() { return [...BUILTIN_CATEGORIES, ...customCategories
 let _catSelectDirty = true;
 function markCategoryDirty() { _catSelectDirty = true; }
 
+// 【V9.3.0 修复 #3】原版虽维护了 _catSelectDirty 标志，但 renderCategorySelect 从未用它做 early return，
+// 导致每次调用都全量重建 <select>，_catSelectDirty 机制完全失效。
+// 修复：加入守卫，分类未变时直接返回，避免无效 DOM 操作。
+// 注意：sel 参数（设置默认选中值）仍需直接操作，无论 dirty 状态。
 function renderCategorySelect(sel) {
+    if (!_catSelectDirty) {
+        // 仅同步选中值，不重建列表
+        if (sel !== undefined) {
+            const el = document.getElementById('pmCategory');
+            if (el && sel) el.value = sel;
+        }
+        return;
+    }
     _catSelectDirty = false;
     const el = document.getElementById('pmCategory');
     if (el) {
@@ -2039,6 +2122,7 @@ function saveCategories() {
 // ================================================================
 let _toastTimer = null;
 function showToast(msg, dur = 2200) {
+    dur = Math.max(500, dur);
     const t = document.getElementById('toast');
     t.textContent = msg; t.classList.add('show');
     if (_toastTimer) clearTimeout(_toastTimer);
@@ -2066,7 +2150,10 @@ document.getElementById('confirmModalBtn').addEventListener('click', () => {
 // ================================================================
 
 function _makeCatalogKey(name, barcode) {
-    return `${(name || '').trim()}|||${(barcode || '').trim()}`;
+    // 【V9.4.0 修复 #4】原版用 '|||' 拼接，若商品名本身含 '|||' 会产生 key 碰撞
+    //（如 name="A|||B", barcode="" 与 name="A", barcode="||B" 生成相同 key）。
+    // 改用 JSON.stringify 序列化数组，天然转义任意特殊字符。
+    return JSON.stringify([(name || '').trim(), (barcode || '').trim()]);
 }
 
 function _getRenderMaps() {
@@ -2229,8 +2316,12 @@ document.addEventListener('DOMContentLoaded', function() {
     syncConfigToSettingsInputs();
     renderCategorySelect('其他'); renderCategoryManager(); renderBackupSlots();
     renderCatalogList(); renderAllList(); updateWarnBanner();
+    _ensureGlobalSwipeCloser();   // 【V9.2.1 修复 #2】全局 swipe 收起监听器,只注册一次
 
     document.getElementById('allProductList').addEventListener('click', _onProductListClick);
+    document.getElementById('allProductList').addEventListener('change', e => {
+        if (e.target.classList.contains('item-checkbox')) updateBatchDeleteBtn();
+    });
     document.getElementById('catalogList').addEventListener('click', _onCatalogListClick);
 
     document.addEventListener('click', e => {
@@ -2258,7 +2349,11 @@ document.addEventListener('DOMContentLoaded', function() {
     const _flushBackup = () => {
         if (!inventory.length && !catalog.length) return;
         if (Date.now() - _lastBackupTs < 10000) return;
-        _lastBackupTs = 0;
+        // 【V9.4.0 修复 #6】原版写 _lastBackupTs = 0，意图是让 autoBackup 内部的
+        // 60 秒节流失效（因为 Date.now()-0 >> 60000 恒成立）。虽然可工作，
+        // 但若将来 autoBackup 节流逻辑改变此处会静默失效。
+        // 改为语义明确的写法：假装"上次备份在 61 秒前"，绕过节流。
+        _lastBackupTs = Date.now() - 61000;
         autoBackup();
     };
     document.addEventListener('visibilitychange', () => {
@@ -2268,9 +2363,6 @@ document.addEventListener('DOMContentLoaded', function() {
     setInterval(() => { if (inventory.length || catalog.length) autoBackup(); }, 5 * 60 * 1000);
 });
 
-// ================================================================
-// 导航
-// ================================================================
 // ================================================================
 // SPA 页面导航系统
 // ================================================================
@@ -2329,7 +2421,7 @@ function navClearAll() {
 }
 
 // ================================================================
-// 导航
+// Tab 切换
 // ================================================================
 function switchTab(tabId) {
     navClearAll();
@@ -2403,8 +2495,28 @@ function _applyTheme(pref) {
         m.setAttribute('content', color);
     });
     // 重绘图表（如果打开中）
+    // 【V9.3.0 修复 #7】原版只调 resize()，ECharts 的文字/背景颜色在 init 时固定，
+    // resize 不更新配色。改为 dispose + 清状态，下次 updateChart() 时重新初始化。
     if (typeof chartInstance !== 'undefined' && chartInstance) {
-        try { chartInstance.resize(); } catch(e) {}
+        try {
+            chartInstance.dispose();
+            chartInstance = null;
+            _chartInitialized = false;
+            _chartDataSig = null;
+            if (isAnalysisOpen) updateChart();
+        } catch(e) {}
+    }
+}
+
+function _ensureSystemWatcher(enabled) {
+    if (_systemThemeWatcher) {
+        _systemThemeWatcher.removeEventListener('change', _onSystemThemeChange);
+    }
+    if (enabled) {
+        _systemThemeWatcher = window.matchMedia('(prefers-color-scheme: dark)');
+        _systemThemeWatcher.addEventListener('change', _onSystemThemeChange);
+    } else {
+        _systemThemeWatcher = null;
     }
 }
 
@@ -2412,12 +2524,7 @@ function setTheme(pref) {
     localStorage.setItem('foodTheme', pref);
     _applyTheme(pref);
     _syncThemeSegmented();
-    // 跟随系统时动态监听系统切换
-    if (_systemThemeWatcher) { _systemThemeWatcher.removeEventListener('change', _onSystemThemeChange); }
-    if (pref === 'system') {
-        _systemThemeWatcher = window.matchMedia('(prefers-color-scheme: dark)');
-        _systemThemeWatcher.addEventListener('change', _onSystemThemeChange);
-    }
+    _ensureSystemWatcher(pref === 'system');
 }
 
 function _onSystemThemeChange() {
@@ -2449,16 +2556,17 @@ function _initTheme() {
     const pref = localStorage.getItem('foodTheme') || 'system';
     _applyTheme(pref);
     _syncThemeSegmented();
-    if (pref === 'system') {
-        _systemThemeWatcher = window.matchMedia('(prefers-color-scheme: dark)');
-        _systemThemeWatcher.addEventListener('change', _onSystemThemeChange);
-    }
+    _ensureSystemWatcher(pref === 'system');
 }
 
 function saveSettings() {
     config.warnDays   = Math.max(1, parseInt(document.getElementById('warnDays').value) || 7);
     config.defProdDate = document.getElementById('defProdDate').value;
-    config.defLife    = document.getElementById('defLife').value;
+    const _rawDefLife = parseInt(document.getElementById('defLife').value);
+    if (document.getElementById('defLife').value.trim() && !(_rawDefLife > 0)) {
+        showToast('⚠️ 默认保质期须为正整数，已清空', 3000);
+    }
+    config.defLife = _rawDefLife > 0 ? String(_rawDefLife) : '';
     config.defUnit    = document.getElementById('defUnit').value;
     safeLSSet(sk('foodConfig'), JSON.stringify(config));
     showToast('✅ 设置已保存');
@@ -2542,7 +2650,8 @@ function saveProductFromModal() {
             name, barcode, category, life, unit, noExpiry,
             updatedAt: now,
         };
-        syncData();
+        // 编辑商品基本信息：名称/保质期等影响库存列表的显示，两个视图都要刷新
+        syncData(true, 'all');
         showToast('✅ 商品已更新');
     } else {
         catalog.push({
@@ -2550,7 +2659,8 @@ function saveProductFromModal() {
             name, barcode, category, life, unit, noExpiry,
             createdAt: now, updatedAt: now,
         });
-        syncData();
+        // 新增商品：库存列表无新批次，只需刷新商品库列表
+        syncData(true, 'catalog');
         showToast(`✅ 已添加商品:${name}`);
     }
     closeAddProductModal();
@@ -2572,7 +2682,7 @@ function deleteCatalog(catId) {
         `确定从商品库删除「${c.name}」?此操作不可撤销。`,
         () => {
             catalog = catalog.filter(x => x.id !== catId);
-            syncData();
+            syncData(true, 'catalog');
             renderCatalogList();
             showToast('已删除');
         }
@@ -2712,7 +2822,7 @@ function saveBatchFromModal() {
             date, qty, location,
             life, unit, expiry, noExpiry
         };
-        syncData();
+        syncData(true, 'inventory');
         showToast('✅ 批次已更新');
     } else {
         inventory.push({
@@ -2723,7 +2833,7 @@ function saveBatchFromModal() {
             life, unit, expiry, noExpiry,
             createdAt: now,
         });
-        syncData();
+        syncData(true, 'inventory');
         showToast('✅ 批次已添加');
     }
     closeAddBatchModal();
@@ -2795,7 +2905,7 @@ function editProduct(id) {
 function deleteProduct(id) {
     showConfirmModal("删除产品", "确定要永久删除该记录吗？", () => {
         inventory = inventory.filter(i => i.id !== id);
-        syncData();
+        syncData(true, 'inventory');
     });
 }
 
@@ -2803,7 +2913,7 @@ function withdrawProduct(id) {
     const inv = inventory.find(i => i.id === id);
     if (!inv) return;
     inv.status = 'withdrawn';
-    syncData();
+    syncData(true, 'inventory');
     showToast('已下架');
 }
 
@@ -2811,7 +2921,7 @@ function restoreProduct(id) {
     const inv = inventory.find(i => i.id === id);
     if (!inv) return;
     inv.status = 'active';
-    syncData();
+    syncData(true, 'inventory');
     showToast('已恢复上架');
 }
 
@@ -2871,7 +2981,7 @@ function batchDelete() {
             const ids = new Set(Array.from(checked).map(cb => cb.dataset.id));
             inventory = inventory.filter(i => !ids.has(i.id));
             document.getElementById('selectAllCB').checked = false;
-            syncData();
+            syncData(true, 'inventory');
             showToast(`已删除 ${cnt} 条记录`);
             // Fix #6: 操作完成后自动退出批量模式
             if (isBatchMode) toggleBatchMode();
@@ -2893,7 +3003,7 @@ function batchWithdraw() {
                 if (ids.has(i.id)) i.status = 'withdrawn';
             });
             document.getElementById('selectAllCB').checked = false;
-            syncData();
+            syncData(true, 'inventory');
             showToast(`已下架 ${cnt} 条记录`);
             // Fix #6: 操作完成后自动退出批量模式
             if (isBatchMode) toggleBatchMode();
@@ -3038,7 +3148,7 @@ function createProductCard(p, todayStr, warningThreshold, todayMs, catMap, showB
     div.innerHTML = `
         <div class="item-header">
             <div class="item-title-wrapper">
-                <input type="checkbox" class="item-checkbox" data-id="${safeId}" style="display:${enableBatch?'inline-block':'none'}" onchange="updateBatchDeleteBtn()">
+                <input type="checkbox" class="item-checkbox" data-id="${safeId}" style="display:${enableBatch?'inline-block':'none'}">
                 <div class="item-title">${escapeHtml(p.name)}</div>
             </div>
             ${badgeHtml}
@@ -3213,9 +3323,19 @@ function renderAllList() {
     _renderedCount = 0;
     _catMapCache = new Map(getAllCategories().map(c => [c.value, c.label]));
 
-    const pendingTotal  = products.filter(p => !p.date && !p.noExpiry && p.status !== 'withdrawn').length;
-    const activeTotal   = products.filter(p => p.status !== 'withdrawn').length;
-    const withdrawnTotal = products.filter(p => p.status === 'withdrawn').length;
+    // 【V9.3.0 修复 #4】原版用三次独立 filter() 计算三个计数，合并为一次 reduce 减少遍历开销
+    const _totals = products.reduce((acc, p) => {
+        if (p.status === 'withdrawn') {
+            acc.withdrawn++;
+        } else {
+            acc.active++;
+            if (!p.date && !p.noExpiry) acc.pending++;
+        }
+        return acc;
+    }, { active: 0, withdrawn: 0, pending: 0 });
+    const pendingTotal   = _totals.pending;
+    const activeTotal    = _totals.active;
+    const withdrawnTotal = _totals.withdrawn;
 
     const btnW = document.getElementById('btnWithdrawn');
     if (btnW) {
@@ -3256,7 +3376,10 @@ function renderAllList() {
         _filteredCache.sort((a,b) => {
             let vA, vB;
             if      (mode==='expiry') { vA=a.expiry||'9999-12-31'; vB=b.expiry||'9999-12-31'; }
-            else if (mode==='date')   { vA=a.date||'';   vB=b.date||''; }
+            else if (mode==='date') {
+                const fb = currentSortOrder==='asc' ? '0000-01-01' : '9999-12-31';
+                vA = a.date || fb; vB = b.date || fb;
+            }
             else if (mode==='recent') {
                 const cmp = String(b.id||'').localeCompare(String(a.id||''), undefined, {numeric: true});
                 return currentSortOrder==='asc' ? cmp : -cmp;
@@ -3296,10 +3419,8 @@ function renderNextPage() {
 }
 
 function toggleSortOrder() {
-    currentSortOrder = currentSortOrder === 'asc' ? 'desc' : 'asc';
-    const arrowEl = document.getElementById('sortArrow');
-    if (arrowEl) arrowEl.textContent = currentSortOrder === 'asc' ? '↑' : '↓';
-    renderAllList();
+    // 保留原有的芯片点击切换功能（点排序芯片上的箭头区域可快速翻转）
+    selectSortOrder(currentSortOrder === 'asc' ? 'desc' : 'asc');
 }
 
 // ================================================================
@@ -3308,9 +3429,8 @@ function toggleSortOrder() {
 const _sortLabelMap = { expiry:'临期', date:'生产日期', recent:'最近录入', life:'保质时长' };
 
 function openSortSheet() {
-    // 同步升降序按钮状态
-    document.getElementById('orderBtnAsc').classList.toggle('active',  currentSortOrder === 'asc');
-    document.getElementById('orderBtnDesc').classList.toggle('active', currentSortOrder === 'desc');
+    // 打开前同步升降序按钮状态
+    _syncSortOrderBtns();
     document.getElementById('sortSheetOverlay').classList.add('active');
     document.getElementById('sortSheet').classList.add('active');
 }
@@ -3318,26 +3438,40 @@ function closeSortSheet() {
     document.getElementById('sortSheetOverlay').classList.remove('active');
     document.getElementById('sortSheet').classList.remove('active');
 }
-function setSortOrder(order) {
+
+/** 同步抽屉内的升序/降序按钮高亮 */
+function _syncSortOrderBtns() {
+    const ascBtn  = document.getElementById('ss-order-asc');
+    const descBtn = document.getElementById('ss-order-desc');
+    if (ascBtn)  ascBtn.classList.toggle('active',  currentSortOrder === 'asc');
+    if (descBtn) descBtn.classList.toggle('active', currentSortOrder === 'desc');
+}
+
+/**
+ * 在抽屉内切换升序/降序。
+ * 不关闭抽屉，立即刷新列表，让用户实时看到变化后再点"完成"。
+ */
+function selectSortOrder(order) {
+    if (currentSortOrder === order) return;
     currentSortOrder = order;
-    document.getElementById('orderBtnAsc').classList.toggle('active',  order === 'asc');
-    document.getElementById('orderBtnDesc').classList.toggle('active', order === 'desc');
-    // 同步顶部芯片箭头
+    // 同步芯片箭头
     const arrowEl = document.getElementById('sortArrow');
     if (arrowEl) arrowEl.textContent = order === 'asc' ? '↑' : '↓';
+    // 同步抽屉按钮
+    _syncSortOrderBtns();
     renderAllList();
 }
+
 function selectSortMode(val) {
     document.getElementById('sortMode').value = val;
-    // 更新 checkmark
+    // 更新排序方式 checkmark
     ['expiry','date','recent','life'].forEach(v => {
         const el = document.getElementById('ss-' + v);
         if (el) el.classList.toggle('visible', v === val);
     });
-    // 更新排序芯片文案
+    // 更新排序芯片文案（不关闭抽屉，用户可继续选升/降序）
     const lbl = document.getElementById('sortLabel');
     if (lbl) lbl.textContent = _sortLabelMap[val] || val;
-    closeSortSheet();
     renderAllList();
 }
 
@@ -3356,16 +3490,18 @@ function _initSwipe(cardEl) {
         cardEl.style.transform = 'translateX(0)';
         if (!animated) requestAnimationFrame(() => { cardEl.style.transition = ''; });
         opened = false;
+        row.classList.remove('swipe-open');
     }
     function _open() {
         cardEl.style.transform = `translateX(-${SWIPE_FULL}px)`;
         opened = true;
+        row.classList.add('swipe-open');
     }
 
-    // 全局点别处时收起
-    document.addEventListener('click', function onDoc(e) {
-        if (opened && !row.contains(e.target)) { _reset(true); }
-    });
+    // 【V9.2.1 修复 #2】全局 click 监听器从"每张卡片一个"改为"全局一个"(只绑一次),
+    //   通过查找 .swipe-open 类关闭所有打开的 row,避免监听器随渲染线性增长导致内存泄漏。
+    //   此处不再 addEventListener。全局监听器见下方 _ensureGlobalSwipeCloser()。
+    cardEl._swipeReset = () => _reset(true);
 
     cardEl.addEventListener('touchstart', e => {
         const t = e.touches[0];
@@ -3394,19 +3530,39 @@ function _initSwipe(cardEl) {
         else { _reset(true); }
     });
 }
+
+// 【V9.2.1 修复 #2】全局唯一的"点击别处收起 swipe-row"监听器,只注册一次
+let _swipeCloserBound = false;
+function _ensureGlobalSwipeCloser() {
+    if (_swipeCloserBound) return;
+    _swipeCloserBound = true;
+    document.addEventListener('click', (e) => {
+        document.querySelectorAll('.swipe-row.swipe-open').forEach(row => {
+            if (row.contains(e.target)) return;
+            const card = row.querySelector(':scope > .item, :scope > .cat-card');
+            if (card && typeof card._swipeReset === 'function') card._swipeReset();
+        });
+    });
+}
 // ================================================================
 function _stripTempFields(key, value) {
     if (typeof key === 'string' && key.startsWith('_')) return undefined;
     return value;
 }
 
-function syncData(withBackup = true) {
+function syncData(withBackup = true, renderScope = 'all') {
+    // 【V9.4.0 修复 #5】增加 renderScope 参数，避免仅修改批次时也重绘商品库列表。
+    //   'all'           — 默认，两个列表都刷新（添加/删除商品时使用）
+    //   'inventory'     — 只刷新库存列表（下架、编辑批次、批量操作等）
+    //   'catalog'       — 只刷新商品库列表（编辑商品基本信息时使用）
     const okCat = safeLSSet(sk('foodCatalog'),   JSON.stringify(catalog,   _stripTempFields));
     const okInv = safeLSSet(sk('foodInventory'), JSON.stringify(inventory, _stripTempFields));
     if (okCat && okInv) {
         _rebuildProductsView();
         if (withBackup) { autoBackup(); updateStoreLastModified(); }
-        renderCatalogList(); renderAllList(); updateWarnBanner();
+        if (renderScope !== 'inventory') renderCatalogList();
+        if (renderScope !== 'catalog')   renderAllList();
+        updateWarnBanner();
     }
 }
 
@@ -3418,17 +3574,35 @@ let pendingImportRows = [];
 function parseExcelDate(v) {
     if (v == null || v === '') return '';
     if (typeof v === 'number') {
+        // Excel 序列号：以 1900-01-01 为第 1 天，25569 = 1970-01-01 距该基准的天数。
+        // 转出的时间戳是 UTC 00:00，new Date() 在中国大陆（UTC+8）用本地方法取年月日
+        // 仍得到正确日期（当地 08:00 仍是同一天）。若有跨境部署需求可改用 Date.UTC 路径。
         const d = new Date(Math.round((v - 25569) * 86400 * 1000));
         return isNaN(d.getTime()) ? '' : getLocalDateStr(d);
     }
-    const s = String(v).replace(/\//g, '-').replace(/\./g, '-').trim();
-    const m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
-    if (!m) return '';
-    const y = parseInt(m[1]), mo = parseInt(m[2]), dy = parseInt(m[3]);
-    if (mo < 1 || mo > 12 || dy < 1 || dy > 31) return '';
-    const d = new Date(y, mo - 1, dy);
-    if (d.getFullYear() !== y || d.getMonth() !== mo - 1 || d.getDate() !== dy) return '';
-    return getLocalDateStr(d);
+    const s = String(v).replace(/[\/\.]/g, '-').trim();
+    const _mk = (y, mo, dy) => {
+        if (mo < 1 || mo > 12 || dy < 1 || dy > 31) return '';
+        const d = new Date(y, mo - 1, dy);
+        if (d.getFullYear() !== y || d.getMonth() !== mo - 1 || d.getDate() !== dy) return '';
+        return getLocalDateStr(d);
+    };
+    // YYYY-M-D
+    let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+    if (m) return _mk(+m[1], +m[2], +m[3]);
+    // M-D-YYYY 或 D-M-YYYY —— 启发式：如果前两段有一个 > 12，则另一个一定是月
+    m = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+    if (m) {
+        const a = +m[1], b = +m[2], y = +m[3];
+        if (a > 12 && b <= 12) return _mk(y, b, a);   // D-M-YYYY（D>12 确定）
+        if (b > 12 && a <= 12) return _mk(y, a, b);   // M-D-YYYY（M>12 确定）
+        // 两个都 ≤12 无法区分时：
+        // 【V9.3.0 修复 #8】原版注释写"美式 Excel 默认(M-D-YYYY)"，但本工具面向中国大陆用户，
+        // 手填日期习惯为 D-M-YYYY（如 05-03-2025 表示 3月5日）。
+        // 改为按 D-M-YYYY 解析；若用户从 Excel 导出应优先使用 YYYY-MM-DD 格式以消除歧义。
+        return _mk(y, b, a);   // D-M-YYYY（大陆惯例）
+    }
+    return '';
 }
 
 function triggerImport() { document.getElementById('fileInput').click(); }
@@ -3455,24 +3629,38 @@ function handleImport(e) {
             pendingImportRows = [];
             rows.forEach((cols, idx) => {
                 if (idx === 0 || !cols[0]) return;
-                const name    = String(cols[0]).trim();
-                const cat     = String(cols[1] != null ? cols[1] : '其他').trim();
-                const loc     = String(cols[2] != null ? cols[2] : '常温').trim();
-                const date    = parseExcelDate(cols[3]);
-                const lifeRaw = cols[4] != null ? String(cols[4]).trim() : '';
-                const life    = parseInt(lifeRaw);
-                const unitStr = String(cols[5] != null ? cols[5] : '天').trim();
+                // 【V9.2.1 修复 #17】列号对齐 exportToExcel 导出列头:
+                // [0]产品名称 [1]条形码 [2]分类 [3]存放位置 [4]生产日期
+                // [5]保质期时长 [6]保质期单位 [7]过期日期(跳过,自动计算) [8]库存数量
+                const name     = String(cols[0]).trim();
+                const barcode  = cols[1] != null ? String(cols[1]).trim() : '';
+                const cat      = cols[2] != null ? String(cols[2]).trim() : '其他';
+                const loc      = cols[3] != null ? String(cols[3]).trim() : '常温';
+                const date     = parseExcelDate(cols[4]);
+                const lifeRaw  = cols[5] != null ? String(cols[5]).trim() : '';
+                // 【V9.4.0 修复 #2】识别无保质期行：导出时 life 列写 '无'，或单元格为空。
+                // 原版 !isNaN(life) && life > 0 校验导致无保质期行 valid=false 被静默丢弃，
+                // 归入"格式错误"计数但无说明，用户无法感知。现在单独处理 noExpiry 行。
+                const noExpiry = (lifeRaw === '无' || lifeRaw === '');
+                const life     = noExpiry ? 0 : parseInt(lifeRaw);
+                const unitStr  = cols[6] != null ? String(cols[6]).trim() : '天';
                 let unit = 'days';
                 if (unitStr.includes('月')) unit = 'months';
                 else if (unitStr.includes('年')) unit = 'years';
-                const qty = cols[7] != null ? (parseInt(String(cols[7]).trim()) || 1) : 1;
+                const qty = cols[8] != null ? (parseInt(String(cols[8]).trim()) || 1) : 1;
 
-                const valid = !!(name && date && !isNaN(life) && life > 0);
-                const isDup = existingKeys.has(_makeCatalogKey(name, '') + '|||' + date);
+                // 无保质期行只需商品名即可 valid；有保质期行还需生产日期和合法 life
+                const valid = noExpiry
+                    ? !!name
+                    : !!(name && date && !isNaN(life) && life > 0);
+                // 无保质期商品不参与 date 去重（允许同商品多批次共存）
+                const isDup = (!noExpiry) && existingKeys.has(_makeCatalogKey(name, barcode) + '|||' + date);
                 pendingImportRows.push({
                     id: genId(),
-                    name, barcode: '', category: cat, location: loc, date, life, unit, qty,
-                    expiry: valid ? getExpiry(date, life, unit) : '',
+                    name, barcode, category: cat, location: loc,
+                    date: noExpiry ? '' : date,
+                    life, unit, qty, noExpiry,
+                    expiry: (valid && !noExpiry) ? getExpiry(date, life, unit) : '',
                     valid, isDup
                 });
             });
@@ -3516,9 +3704,14 @@ function openImportModal() {
 }
 
 function selectImportMode(mode) {
+    // 【V9.3.0 修复 #5】原版用 document.querySelector(`input[value="${m}"]`) 全局匹配，
+    // 若页面其他地方有同值 input 会误操作。限定到 #importModal 容器内。
+    const modal = document.getElementById('importModal');
+    if (!modal) return;
     ['merge','overwrite'].forEach(m => {
         document.getElementById(`modeLabel-${m}`).classList.toggle('selected', m === mode);
-        document.querySelector(`input[value="${m}"]`).checked = m === mode;
+        const radio = modal.querySelector(`input[name="importMode"][value="${m}"]`);
+        if (radio) radio.checked = m === mode;
     });
 }
 
@@ -3534,18 +3727,20 @@ function confirmImport() {
 
     const now = Date.now();
     const _rowToDb = (r) => {
-        const cat = _upsertCatalog(r.name, r.barcode || '', r.category, r.life, r.unit, false);
+        // 【V9.4.0 修复 #2 续】_upsertCatalog 第 6 参数传入真实 noExpiry，
+        // 原版硬编码 false，导致无保质期商品导入后变成"有保质期"。
+        const cat = _upsertCatalog(r.name, r.barcode || '', r.category, r.life, r.unit, !!r.noExpiry);
         inventory.push({
             id:        r.id,
             catalogId: cat.id,
-            date:      r.date,
+            date:      r.noExpiry ? '' : (r.date || ''),
             qty:       r.qty || 1,
             location:  r.location || '常温',
             status:    'active',
-            life:      r.life,
+            life:      r.noExpiry ? 0  : r.life,
             unit:      r.unit,
-            expiry:    r.expiry,
-            noExpiry:  false,
+            expiry:    r.noExpiry ? '' : (r.expiry || ''),
+            noExpiry:  !!r.noExpiry,
             createdAt: now,
         });
     };
@@ -3663,9 +3858,12 @@ async function exportToExcel() {
         const nowStr = `${getLocalDateStr(now)} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
         const { catMap } = _getRenderMaps();
 
+        const includeWithdrawn = document.getElementById('exportIncludeWithdrawn')?.checked ?? false;
+        let filteredCount = 0;
+
         const dataSheet = [['产品名称','条形码','分类','存放位置','生产日期','保质期时长','保质期单位','过期日期','库存数量']];
         inventory.forEach(inv => {
-            if (inv.status && inv.status !== 'active') return;
+            if (!includeWithdrawn && inv.status && inv.status !== 'active') { filteredCount++; return; }
             const cat = catMap.get(inv.catalogId);
             if (!cat) return; 
             const u = inv.unit === 'days' ? '天' : inv.unit === 'months' ? '个月' : '年';
@@ -3699,6 +3897,7 @@ async function exportToExcel() {
             ['导出时间', nowStr],
             ['记录条数', dataSheet.length - 1],
             ['工具版本', APP_VERSION],
+            ...(filteredCount > 0 ? [['已过滤下架批次', filteredCount + ' 条（可勾选"包含已下架批次"重新导出）']] : []),
         ];
 
         const wb = XLSX.utils.book_new();
@@ -3731,9 +3930,11 @@ function handleJsonImport(e) {
                 importCats = data.catalog;
             } else if (data._type === 'food-tool-metadata' && Array.isArray(data.products)) {
                 // 兼容旧版 V9.0-rc2 导出的 products
+                // 【V9.3.0 修复 #2】原版硬编码 noExpiry: false，导致旧版中标记为无保质期的商品
+                // 导入后变成"有保质期"，上架批次进入错误分支。现改为读取原始字段。
                 importCats = data.products.map(p => ({
-                    name: p.name, barcode: p.barcode, category: p.category, 
-                    life: p.life, unit: p.unit, noExpiry: false
+                    name: p.name, barcode: p.barcode, category: p.category,
+                    life: p.life, unit: p.unit, noExpiry: !!p.noExpiry
                 }));
             } else {
                 throw new Error('无法识别的商品库数据格式，请确保是由新版系统导出。');
@@ -3743,11 +3944,17 @@ function handleJsonImport(e) {
             const badCount = importCats.length - validCount;
             if (validCount === 0) return showToast('⚠️ 文件中没有有效的商品记录');
 
+            // 【V9.4.0 修复 #3】将 catalog 预建为 Map，将预览计数和实际执行均从
+            // O(n×m) 降为 O(n+m)。商品库 1000 条 × 导入 500 条时可避免 50 万次字符串比较。
+            const catalogKeyMap = new Map(
+                catalog.map(c => [_makeCatalogKey(c.name, c.barcode), c])
+            );
+
             let skipCount = 0, updateCount = 0, addCount = 0;
             importCats.forEach(ic => {
                 if (!ic || !ic.name) return;
                 const key = _makeCatalogKey(ic.name, ic.barcode);
-                if (catalog.some(c => _makeCatalogKey(c.name, c.barcode) === key)) {
+                if (catalogKeyMap.has(key)) {
                     updateCount++;
                 } else {
                     addCount++;
@@ -3763,22 +3970,27 @@ function handleJsonImport(e) {
                 totalValid: validCount,
                 addCount, updateCount, badCount,
                 onConfirm: (mode) => {
+                    // onConfirm 执行时重新从当前 catalog 建 Map（用户可能在预览期间操作了别的）
+                    const execKeyMap = new Map(
+                        catalog.map(c => [_makeCatalogKey(c.name, c.barcode), c])
+                    );
                     let actualAdd = 0, actualUpdate = 0;
+                    const now = Date.now();
                     importCats.forEach(ic => {
                         if (!ic || !ic.name) return;
                         const key = _makeCatalogKey(ic.name, ic.barcode);
-                        const existing = catalog.find(c => _makeCatalogKey(c.name, c.barcode) === key);
+                        const existing = execKeyMap.get(key);
                         if (existing) {
                             if (mode === 'overwrite') {
                                 existing.category = ic.category || existing.category;
                                 existing.life = ic.life !== undefined ? ic.life : existing.life;
                                 existing.unit = ic.unit || existing.unit;
                                 existing.noExpiry = !!ic.noExpiry;
-                                existing.updatedAt = Date.now();
+                                existing.updatedAt = now;
                                 actualUpdate++;
                             }
                         } else {
-                            catalog.push({
+                            const newCat = {
                                 id: 'cat_' + genId(),
                                 name: String(ic.name).trim(),
                                 barcode: (ic.barcode || '').trim(),
@@ -3786,9 +3998,11 @@ function handleJsonImport(e) {
                                 life: parseInt(ic.life) || 0,
                                 unit: ic.unit || 'days',
                                 noExpiry: !!ic.noExpiry,
-                                createdAt: Date.now(),
-                                updatedAt: Date.now()
-                            });
+                                createdAt: now,
+                                updatedAt: now
+                            };
+                            catalog.push(newCat);
+                            execKeyMap.set(key, newCat);  // 防同批次内重复 key 写两次
                             actualAdd++;
                         }
                     });
@@ -3817,7 +4031,19 @@ function applyJsonImportConfig(data) {
         safeLSSet(sk('foodConfig'), JSON.stringify(config));
         syncConfigToSettingsInputs();
     }
-    if (data.customCategories) { customCategories = data.customCategories; saveCategories(); }
+    // 【V9.2.1 修复 #21】合并自定义分类而非覆盖,避免清除本店已有的自定义分类
+    if (Array.isArray(data.customCategories) && data.customCategories.length) {
+        const existing = new Set(customCategories.map(c => c && c.value));
+        let added = 0;
+        data.customCategories.forEach(c => {
+            if (c && c.value && !existing.has(c.value)) {
+                customCategories.push(c);
+                existing.add(c.value);
+                added++;
+            }
+        });
+        if (added > 0) saveCategories();
+    }
 }
 
 function showJsonImportModal({ typeName, fromStore, timeStr, totalValid,
@@ -3861,12 +4087,25 @@ function clearAllData() {
     const cnt = inventory.length;
     showConfirmModal(
         `⚠️ 清空「${name}」所有记录`,
-        `将永久删除该门店全部 ${cnt} 条产品数据。门店本身保留，此操作不可撤销！`,
+        `将永久删除该门店全部 ${cnt} 条产品数据、自定义分类及本地备份。门店本身保留,此操作不可撤销!`,
         () => {
-            catalog = []; inventory = [];
-            localStorage.removeItem(sk('foodProducts'));
-            localStorage.removeItem(sk('foodProducts_legacy'));
-            syncData();
+            // 【V9.2.1 修复 #26】清空本店时一并清理自定义分类和备份,避免残留
+            // 【V9.4.0 修复 #1】补上 foodCatalog / foodInventory 的显式 removeItem。
+            //   原版依赖 syncData(false) 写入空数组来"清除",但若此时 localStorage 配额已满
+            //   导致写入失败,safeLSSet 返回 false → syncData 内部守卫阻止后续操作 →
+            //   旧数据残留磁盘,下次 loadStoreData 时数据"复活"。先 removeItem 可确保
+            //   即便 syncData 写入失败,也不会在磁盘留下旧数据。
+            catalog = []; inventory = []; customCategories = [];
+            [
+                sk('foodProducts'), sk('foodProducts_legacy'),
+                sk('foodCatalog'), sk('foodInventory'),
+                sk('foodCategories'),
+                sk('foodBackup_1'), sk('foodBackup_2'), sk('foodBackup_3'),
+            ].forEach(k => localStorage.removeItem(k));
+            syncData(false);   // 不触发 autoBackup,避免刚清空又落盘
+            renderBackupSlots();
+            renderCategoryManager();
+            renderCategorySelect('其他');
             showToast('已清空本店所有记录');
         },
         `确认清空 ${cnt} 条`
@@ -3892,26 +4131,53 @@ function loadApiConfig() {
         if (s) {
             const parsed = JSON.parse(s);
             if (parsed._obf) {
-                try { parsed.appKey    = atob(parsed.appKey    || ''); } catch(e) { parsed.appKey    = ''; }
-                try { parsed.appSecret = atob(parsed.appSecret || ''); } catch(e) { parsed.appSecret = ''; }
+                // 【V9.2.1 修复 #22】UTF-8 安全的 base64 解码,兼容中文字符
+                try { parsed.appKey    = _b64dec(parsed.appKey    || ''); } catch(e) { parsed.appKey    = ''; }
+                try { parsed.appSecret = _b64dec(parsed.appSecret || ''); } catch(e) { parsed.appSecret = ''; }
                 delete parsed._obf;
             }
             _apiConfig = { ..._apiConfig, ...parsed };
         }
     } catch(e) {}
 }
+// 【V9.3.0 修复 #1】UTF-8 safe base64 helpers（轻度混淆，不是加密，请勿在公共设备存储敏感密钥）
+// 原版使用 escape()/unescape()，已废弃且对 U+00FF 以上字符（中文、emoji）行为不一致。
+// 新版改用 TextEncoder/TextDecoder，在所有现代浏览器中可靠处理任意 Unicode 字符。
+function _b64enc(s) {
+    try {
+        const bytes = new TextEncoder().encode(String(s || ''));
+        // Uint8Array → binary string → btoa
+        let bin = '';
+        bytes.forEach(b => { bin += String.fromCharCode(b); });
+        return btoa(bin);
+    } catch(e) { return ''; }
+}
+function _b64dec(s) {
+    try {
+        const bin = atob(String(s || ''));
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        return new TextDecoder().decode(bytes);
+    } catch(e) { return ''; }
+}
 function saveApiSettings() {
     _apiConfig.platform  = document.getElementById('apiPlatform').value;
     _apiConfig.appKey    = document.getElementById('apiAppKey').value.trim();
     _apiConfig.appSecret = document.getElementById('apiAppSecret').value.trim();
     _apiConfig.customUrl = document.getElementById('apiCustomUrl').value.trim();
-    localStorage.setItem('barcodeApiConfig', JSON.stringify({
-        platform:  _apiConfig.platform,
-        customUrl: _apiConfig.customUrl,
-        appKey:    btoa(_apiConfig.appKey),
-        appSecret: btoa(_apiConfig.appSecret),
-        _obf:      true
-    }));
+    try {
+        localStorage.setItem('barcodeApiConfig', JSON.stringify({
+            platform:  _apiConfig.platform,
+            customUrl: _apiConfig.customUrl,
+            appKey:    _b64enc(_apiConfig.appKey),
+            appSecret: _b64enc(_apiConfig.appSecret),
+            _obf:      true
+        }));
+    } catch(e) {
+        showToast('❌ 保存失败：' + e.message, 3500);
+        console.error('saveApiSettings:', e);
+        return;
+    }
     updateApiStatusBadge();
     showToast('✅ API 设置已保存');
     navPop();
@@ -3997,7 +4263,11 @@ function _loadZXing() {
         const s = document.createElement('script');
         s.src = 'https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js';
         s.onload  = resolve;
-        s.onerror = () => reject(new Error('ZXing CDN 加载失败，请检查网络'));
+        // 【V9.2.1 修复 #23】失败时清缓存,允许用户联网后重试
+        s.onerror = () => {
+            _zxingPromise = null;
+            reject(new Error('ZXing CDN 加载失败，请检查网络'));
+        };
         document.head.appendChild(s);
     });
     return _zxingPromise;
@@ -4011,6 +4281,19 @@ async function openScanner(scene) {
     document.getElementById('scannerModal').classList.add('active');
     _setScannerStatus('scanning', '正在启动摄像头…');
 
+    // 【V9.2.1 修复 #18】统一错误出口,防止 _scannerOpen 残留导致扫码功能死锁
+    const _fail = (msg) => {
+        _setScannerStatus('error', '❌ ' + msg);
+        showToast('📷 ' + msg, 3500);
+        // 清理可能已经打开的流
+        if (_scannerStream) {
+            try { _scannerStream.getTracks().forEach(t => t.stop()); } catch(_) {}
+            _scannerStream = null;
+        }
+        _scannerOpen = false;
+        // modal 保留给用户看到错误,用户点关闭时走 closeScanner
+    };
+
     const constraints = { video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } } };
     try {
         _scannerStream = await navigator.mediaDevices.getUserMedia(constraints);
@@ -4020,8 +4303,7 @@ async function openScanner(scene) {
             const msg = e2.name === 'NotAllowedError' ? '请允许访问摄像头权限后重试'
                       : e2.name === 'NotFoundError'   ? '未检测到摄像头设备'
                       : '摄像头启动失败：' + e2.message;
-            _setScannerStatus('error', '❌ ' + msg);
-            showToast('📷 ' + msg);
+            _fail(msg);
             return;
         }
     }
@@ -4034,7 +4316,7 @@ async function openScanner(scene) {
     } else {
         _setScannerStatus('scanning', '加载扫描引擎…');
         try { await _loadZXing(); _startZXingDetector(video); }
-        catch(e) { _setScannerStatus('error', '❌ ' + e.message); showToast(e.message); }
+        catch(e) { _fail(e.message || '扫描引擎加载失败'); }
     }
 }
 
@@ -4213,7 +4495,8 @@ async function _lookupBarcode(code) {
     let url = '', headers = {}, parseResult = null;
 
     if (platform === 'juhe') {
-        url = `https://www.juheapi.com/barcode/index?key=${encodeURIComponent(appKey)}&barcode=${encodeURIComponent(code)}`;
+        // 【V9.2.1 修复 #19】聚合数据真实接口域名为 apis.juhe.cn (原 www.juheapi.com 已失效)
+        url = `https://apis.juhe.cn/barcode/index?key=${encodeURIComponent(appKey)}&barcode=${encodeURIComponent(code)}`;
         parseResult = data => {
             if (data.error_code !== 0 || !data.result) return null;
             const r = data.result;
@@ -4266,9 +4549,8 @@ async function _lookupBarcode(code) {
             if (e.message && e.message.includes('Failed to fetch')) return { name: null, reason: 'cors', detail: 'CORS 拦截' };
             return { name: null, reason: 'network', detail: e.message };
         }
-        parseResult = () => null;
     } else if (platform === 'custom') {
-        if (!customUrl) return null;
+        if (!customUrl) return { name: null, reason: 'bad_action', detail: '未填写自定义接口 URL' };
         url = customUrl.replace('{key}', encodeURIComponent(appKey)).replace('{code}', encodeURIComponent(code));
         parseResult = data => {
             const r = data.result || data.data || data;
@@ -4278,7 +4560,8 @@ async function _lookupBarcode(code) {
             return { name };
         };
     } else {
-        return null;
+        // 【V9.2.1 修复 #25】防御性返回,虽然上游已提前拦截
+        return { name: null, reason: 'bad_action', detail: '未选择 API 平台' };
     }
 
     const ctrl  = new AbortController();
@@ -4357,19 +4640,7 @@ function _setScannerStatus(type, text) {
                 <div class="scan-input-wrapper">
                     <input type="text" id="pmName" placeholder="如:伊利纯牛奶" autocomplete="off">
                     <button class="scan-trigger-btn" onclick="openScanner('product')" title="扫描条形码" type="button" aria-label="扫描条形码">
-                        <svg viewBox="0 0 22 22" width="22" height="22" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M1 6V2h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-                            <path d="M21 6V2h-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-                            <path d="M1 16v4h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-                            <path d="M21 16v4h-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-                            <line x1="5" y1="7.5" x2="5" y2="14.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
-                            <line x1="7" y1="7.5" x2="7" y2="14.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            <line x1="9.5" y1="7.5" x2="9.5" y2="14.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
-                            <line x1="11.5" y1="7.5" x2="11.5" y2="14.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-                            <line x1="13.5" y1="7.5" x2="13.5" y2="14.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
-                            <line x1="15.5" y1="7.5" x2="15.5" y2="14.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            <line x1="17" y1="7.5" x2="17" y2="14.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
-                        </svg>
+                        <svg width="22" height="22" aria-hidden="true"><use href="#scan-icon-full"/></svg>
                     </button>
                 </div>
             </div>
@@ -4429,15 +4700,7 @@ function _setScannerStatus(type, text) {
                         <div class="picker-meta" id="batchPickerMeta"></div>
                     </div>
                     <button class="scan-trigger-btn" style="position:static;transform:none;" onclick="event.stopPropagation();openScanner('batch')" title="扫描条形码" type="button">
-                        <svg viewBox="0 0 22 22" width="18" height="18" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M1 6V2h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-                            <path d="M21 6V2h-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-                            <path d="M1 16v4h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-                            <path d="M21 16v4h-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-                            <line x1="7" y1="7.5" x2="7" y2="14.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            <line x1="11.5" y1="7.5" x2="11.5" y2="14.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-                            <line x1="15.5" y1="7.5" x2="15.5" y2="14.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                        </svg>
+                        <svg width="18" height="18" aria-hidden="true"><use href="#scan-icon-slim"/></svg>
                     </button>
                     <span class="picker-arrow">›</span>
                 </div>
@@ -4495,15 +4758,7 @@ function _setScannerStatus(type, text) {
                 <span class="search-icon">🔍</span>
                 <input type="text" id="catalogPickerSearch" placeholder="搜索名称或条码" autocomplete="off">
                 <button class="scan-trigger-btn" onclick="openScanner('search-picker')" title="扫描条形码" type="button" aria-label="扫描条形码">
-                    <svg viewBox="0 0 22 22" width="20" height="20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M1 6V2h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-                        <path d="M21 6V2h-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-                        <path d="M1 16v4h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-                        <path d="M21 16v4h-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-                        <line x1="7" y1="7.5" x2="7" y2="14.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                        <line x1="11.5" y1="7.5" x2="11.5" y2="14.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-                        <line x1="15.5" y1="7.5" x2="15.5" y2="14.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                    </svg>
+                    <svg width="20" height="20" aria-hidden="true"><use href="#scan-icon-slim"/></svg>
                 </button>
             </div>
             <div class="catalog-search-result" id="catalogPickerResult"></div>
@@ -4549,11 +4804,12 @@ function _setScannerStatus(type, text) {
     <button class="sort-sheet-item" data-sort-val="date"   onclick="selectSortMode('date')">🆕 生产日期 <span class="sort-sheet-check" id="ss-date">✓</span></button>
     <button class="sort-sheet-item" data-sort-val="recent" onclick="selectSortMode('recent')">🕒 最近录入 <span class="sort-sheet-check" id="ss-recent">✓</span></button>
     <button class="sort-sheet-item" data-sort-val="life"   onclick="selectSortMode('life')">⏱️ 保质时长 <span class="sort-sheet-check" id="ss-life">✓</span></button>
-    <div class="sort-sheet-order-row">
-        <span class="sort-sheet-order-label">排列顺序</span>
-        <div class="sort-sheet-order-btns">
-            <button id="orderBtnAsc"  class="sort-order-btn active" onclick="setSortOrder('asc')">↑ 升序</button>
-            <button id="orderBtnDesc" class="sort-order-btn"        onclick="setSortOrder('desc')">↓ 降序</button>
+    <!-- 升序/降序 -->
+    <div class="sort-order-section">
+        <div class="sort-order-label">排列方向</div>
+        <div class="sort-order-btns">
+            <button class="sort-order-btn active" id="ss-order-asc" onclick="selectSortOrder('asc')">↑ 升序</button>
+            <button class="sort-order-btn"        id="ss-order-desc" onclick="selectSortOrder('desc')">↓ 降序</button>
         </div>
     </div>
     <button class="sort-sheet-cancel" onclick="closeSortSheet()">完成</button>
